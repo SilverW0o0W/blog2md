@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from threading import Lock
-from typing import Any, Deque, Dict, List
+from typing import Any
 from urllib.parse import quote
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -23,7 +23,7 @@ app = FastAPI(title="blog2md web", version="0.1.0")
 BASE_DIR = Path(__file__).resolve().parent
 INDEX_HTML = BASE_DIR / "templates" / "index.html"
 MAX_HISTORY = 20
-RECENT_CONVERSIONS: Deque[Dict[str, Any]] = deque(maxlen=MAX_HISTORY)
+RECENT_CONVERSIONS: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
 RECENT_CONVERSIONS_LOCK = Lock()
 
 
@@ -41,7 +41,7 @@ def _ascii_fallback_filename(name: str) -> str:
     return safe.strip("._") or "article.zip"
 
 
-def _build_zip_bytes(markdown_path: Path, image_paths: List[Path], metadata: Dict[str, Any]) -> bytes:
+def _build_zip_bytes(markdown_path: Path, image_paths: list[Path], metadata: dict[str, Any]) -> bytes:
     buf = BytesIO()
     with ZipFile(buf, "w", compression=ZIP_DEFLATED) as zf:
         zf.write(markdown_path, arcname=markdown_path.name)
@@ -59,7 +59,7 @@ def _build_zip_bytes(markdown_path: Path, image_paths: List[Path], metadata: Dic
     return buf.read()
 
 
-def _build_meta_payload(result: Any, *, source_url: str, zip_name: str) -> Dict[str, Any]:
+def _build_meta_payload(result: Any, *, source_url: str, zip_name: str) -> dict[str, Any]:
     return {
         "converted_at": datetime.now(timezone.utc).isoformat(),
         "source_url": source_url,
@@ -76,7 +76,7 @@ def _build_meta_payload(result: Any, *, source_url: str, zip_name: str) -> Dict[
     }
 
 
-def _record_history(item: Dict[str, Any]) -> None:
+def _record_history(item: dict[str, Any]) -> None:
     with RECENT_CONVERSIONS_LOCK:
         RECENT_CONVERSIONS.appendleft(item)
 
@@ -89,7 +89,7 @@ def _build_content_disposition(filename: str) -> str:
 
 
 @app.get("/api/history")
-def history(limit: int = Query(default=10, ge=1, le=MAX_HISTORY)) -> Dict[str, List[Dict[str, Any]]]:
+def history(limit: int = Query(default=10, ge=1, le=MAX_HISTORY)) -> dict[str, list[dict[str, Any]]]:
     with RECENT_CONVERSIONS_LOCK:
         items = list(RECENT_CONVERSIONS)[:limit]
     return {"items": items}

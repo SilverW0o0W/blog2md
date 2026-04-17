@@ -14,8 +14,6 @@
 
 ## 运行
 
-Python 版本建议与主项目保持一致（`3.8` 到 `3.14`）。
-
 先在仓库根目录安装 `blog2md` 本体（如果还没安装）：
 
 ```bash
@@ -34,11 +32,6 @@ python3 -m pip install -r src/web/requirements.txt
 uvicorn src.web.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-生产环境（如 Supervisor）建议去掉 `--reload`：
-
-```bash
-uvicorn src.web.main:app --host 0.0.0.0 --port 8000
-```
 
 浏览器访问：`http://127.0.0.1:8000`
 
