@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>blog2md web</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f7fb;
+      color: #1f2937;
+    }
+    .container {
+      max-width: 760px;
+      margin: 48px auto;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 26px;
+    }
+    p {
+      margin: 0 0 18px;
+      color: #4b5563;
+      line-height: 1.6;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    input[type="url"] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    .actions {
+      margin-top: 14px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    button {
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #93c5fd;
+      cursor: not-allowed;
+    }
+    .hint {
+      margin-top: 14px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .error {
+      margin-top: 14px;
+      color: #b91c1c;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+    .ok {
+      margin-top: 14px;
+      color: #065f46;
+      font-size: 14px;
+    }
+    .history {
+      margin-top: 28px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 18px;
+    }
+    .history h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+    .history-list {
+      margin: 0;
+      padding-left: 18px;
+      color: #374151;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .history-list li {
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
+    .history-empty {
+      color: #6b7280;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>blog2md Web 转换器</h1>
+    <p>输入博客园或微信公众号文章链接，返回包含 Markdown 和图片资源的 ZIP 压缩包。</p>
+
+    <form id="convert-form">
+      <label for="url-input">文章 URL</label>
+      <input
+        id="url-input"
+        type="url"
+        placeholder="https://www.cnblogs.com/... 或 https://mp.weixin.qq.com/s/..."
+        required
+      />
+      <div class="actions">
+        <button id="submit-btn" type="submit">转换并下载</button>
+        <span id="loading" style="display:none; color:#1d4ed8;">正在转换，请稍候...</span>
+      </div>
+      <div class="hint">支持域名：*.cnblogs.com、mp.weixin.qq.com</div>
+      <div id="error" class="error" style="display:none;"></div>
+      <div id="ok" class="ok" style="display:none;"></div>
+    </form>
+
+    <section class="history">
+      <h2>最近转换记录</h2>
+      <div id="history-empty" class="history-empty" style="display:none;">暂无记录</div>
+      <ol id="history-list" class="history-list"></ol>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById("convert-form");
+    const submitBtn = document.getElementById("submit-btn");
+    const loading = document.getElementById("loading");
+    const errorBox = document.getElementById("error");
+    const okBox = document.getElementById("ok");
+    const historyList = document.getElementById("history-list");
+    const historyEmpty = document.getElementById("history-empty");
+
+    function parseFilename(disposition) {
+      if (!disposition) return "article.zip";
+      const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      if (utf8Match && utf8Match[1]) {
+        try {
+          return decodeURIComponent(utf8Match[1]);
+        } catch (_e) {}
+      }
+      const normalMatch = disposition.match(/filename="?([^";]+)"?/i);
+      return (normalMatch && normalMatch[1]) ? normalMatch[1] : "article.zip";
+    }
+
+    function formatTime(text) {
+      if (!text) return "-";
+      const date = new Date(text);
+      if (Number.isNaN(date.getTime())) return text;
+      return date.toLocaleString();
+    }
+
+    function renderHistory(items) {
+      historyList.innerHTML = "";
+      if (!items || items.length === 0) {
+        historyEmpty.style.display = "block";
+        return;
+      }
+
+      historyEmpty.style.display = "none";
+      for (const item of items) {
+        const li = document.createElement("li");
+        const cacheText = item.from_cache ? "缓存命中" : "远程抓取";
+        li.textContent = `${item.title} | ${item.site_name} | 图片 ${item.image_count} 张 | ${cacheText} | ${formatTime(item.converted_at)} | ${item.zip_name}`;
+        historyList.appendChild(li);
+      }
+    }
+
+    async function refreshHistory() {
+      try {
+        const response = await fetch("/api/history?limit=10");
+        if (!response.ok) {
+          renderHistory([]);
+          return;
+        }
+        const data = await response.json();
+        renderHistory(data.items || []);
+      } catch (_e) {
+        renderHistory([]);
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorBox.style.display = "none";
+      okBox.style.display = "none";
+
+      const url = document.getElementById("url-input").value.trim();
+      if (!url) {
+        errorBox.textContent = "请输入有效 URL";
+        errorBox.style.display = "block";
+        return;
+      }
+
+      submitBtn.disabled = true;
+      loading.style.display = "inline";
+
+      try {
+        const response = await fetch("/api/convert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+
+        if (!response.ok) {
+          let detail = `请求失败（${response.status}）`;
+          try {
+            const data = await response.json();
+            detail = data.detail || detail;
+          } catch (_e) {}
+          throw new Error(detail);
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition");
+        const filename = parseFilename(disposition);
+
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+
+        okBox.textContent = `转换成功，已下载：${filename}`;
+        okBox.style.display = "block";
+        await refreshHistory();
+      } catch (error) {
+        errorBox.textContent = String(error.message || error);
+        errorBox.style.display = "block";
+      } finally {
+        submitBtn.disabled = false;
+        loading.style.display = "none";
+      }
+    });
+
+    refreshHistory();
+  </script>
+</body>
+</html>
+
