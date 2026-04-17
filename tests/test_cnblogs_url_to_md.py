@@ -118,7 +118,7 @@ class UrlHtmlCacheLoaderTests(unittest.TestCase):
             cache_dir = Path(tmp_dir)
             loader = UrlHtmlCacheLoader(cache_dir=cache_dir, timeout=5)
 
-            with patch("blog2md.reader_tools.cache.requests.get") as mocked_get:
+            with patch("blog2md.tools.cache.requests.get") as mocked_get:
                 response = Mock()
                 response.text = fake_html
                 response.raise_for_status = Mock()
@@ -177,7 +177,7 @@ class ServiceFunctionTests(unittest.TestCase):
             cache_dir = tmp_path / "cache"
             output_md = tmp_path / "output.md"
 
-            with patch("blog2md.reader_tools.cache.requests.get") as mocked_get:
+            with patch("blog2md.tools.cache.requests.get") as mocked_get:
                 response = Mock()
                 response.text = html
                 response.raise_for_status = Mock()

@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from .reader_tools.cache import UrlHtmlCacheLoader
-from .reader_tools.pathing import sanitize_filename
+from .tools.cache import UrlHtmlCacheLoader
+from .tools.pathing import sanitize_filename
 
 
 @dataclass

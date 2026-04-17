@@ -12,7 +12,7 @@ import argparse
 from pathlib import Path
 
 from .converter import HtmlToMarkdownConverter
-from .reader_tools.pathing import load_html, resolve_output_markdown_path
+from .tools.pathing import load_html, resolve_output_markdown_path
 
 
 __all__ = ["HtmlToMarkdownConverter", "build_parser", "load_html", "main", "resolve_output_markdown_path"]

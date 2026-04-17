@@ -65,7 +65,7 @@
 ```text
 blog2md/
 ├── src/blog2md/
-│   ├── reader_tools/
+│   ├── tools/
 │   │   ├── cache.py
 │   │   ├── extractor.py
 │   │   ├── image.py
@@ -90,7 +90,7 @@ blog2md/
 
 按职责可以理解为四层：
 
-1. **工具层**：`src/blog2md/reader_tools/`
+1. **工具层**：`src/blog2md/tools/`
    - `extractor.py`：正文提取
    - `image.py`：图片下载与路径改写
    - `markdown.py`：Markdown 渲染

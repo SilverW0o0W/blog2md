@@ -7,13 +7,13 @@
 
 from .converter import HtmlToMarkdownConverter
 from .cnblogs_url_to_md import convert_cnblogs_url
-from .reader_tools.extractor import ContentExtractorTool
-from .reader_tools.image import ImageDownloadTool
-from .reader_tools.markdown import MarkdownRenderTool
+from .tools.extractor import ContentExtractorTool
+from .tools.image import ImageDownloadTool
+from .tools.markdown import MarkdownRenderTool
 from .models import ConvertResult
-from .reader_tools.pathing import HtmlSourceLoaderTool, load_html, resolve_output_markdown_path
+from .tools.pathing import HtmlSourceLoaderTool, load_html, resolve_output_markdown_path
 from .site_common import PageMeta, SiteConvertResult
-from .reader_tools.cache import UrlHtmlCacheLoader
+from .tools.cache import UrlHtmlCacheLoader
 from .site_router import convert_url_to_md, select_site
 from .wechat_url_to_md import convert_wechat_url
 

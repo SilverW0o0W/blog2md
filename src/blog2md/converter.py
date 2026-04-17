@@ -11,9 +11,9 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-from .reader_tools.extractor import ContentExtractorTool
-from .reader_tools.image import ImageDownloadTool
-from .reader_tools.markdown import MarkdownRenderTool
+from .tools.extractor import ContentExtractorTool
+from .tools.image import ImageDownloadTool
+from .tools.markdown import MarkdownRenderTool
 from .models import ConvertResult
 
 

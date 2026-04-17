@@ -23,7 +23,7 @@
 
 按职责分层如下：
 
-1. **工具层**：`src/blog2md/reader_tools/`
+1. **工具层**：`src/blog2md/tools/`
    - `extractor.py`
    - `image.py`
    - `markdown.py`
@@ -156,7 +156,7 @@ python3 -m blog2md.site_router --url "https://mp.weixin.qq.com/s/Xs4UFMLs0VsaMrz
 ## 9. 后续改造建议
 
 - 继续保持现有分层，不把站点逻辑回灌到通用层
-- 新增站点时优先复用 `reader_tools` 与 `site_common`
+- 新增站点时优先复用 `tools` 与 `site_common`
 - 对外 CLI 和函数接口尽量保持兼容
 - 所有结构性改动都要先更新测试，再更新文档
 

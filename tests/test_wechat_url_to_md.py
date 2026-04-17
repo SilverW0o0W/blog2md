@@ -61,7 +61,7 @@ class WechatConverterTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            with patch("blog2md.reader_tools.cache.requests.get") as mocked_get:
+            with patch("blog2md.tools.cache.requests.get") as mocked_get:
                 response = Mock()
                 response.text = html
                 response.raise_for_status = Mock()

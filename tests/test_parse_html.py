@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 
 from blog2md.converter import HtmlToMarkdownConverter as ModularConverter
-from blog2md.reader_tools.extractor import ContentExtractorTool
-from blog2md.reader_tools.markdown import MarkdownRenderTool
+from blog2md.tools.extractor import ContentExtractorTool
+from blog2md.tools.markdown import MarkdownRenderTool
 from blog2md.parse_html import HtmlToMarkdownConverter, resolve_output_markdown_path
 
 

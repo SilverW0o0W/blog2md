@@ -16,7 +16,7 @@
 
 核心分层：
 
-- 工具层：`src/blog2md/reader_tools/`
+- 工具层：`src/blog2md/tools/`
 - 通用层：`src/blog2md/parse_html.py` + `src/blog2md/converter.py`
 - 站点层：
   - `src/blog2md/cnblogs_url_to_md.py`
@@ -95,7 +95,7 @@ python3 -m unittest -v tests.test_parse_html tests.test_cnblogs_url_to_md tests.
 1) 只能修改当前仓库内文件。
 2) 保持已有 CLI 与函数接口兼容。
 3) 保持多站点架构分层：
-   - 工具层：src/blog2md/reader_tools/*
+   - 工具层：src/blog2md/tools/*
    - 通用层：src/blog2md/site_common.py / src/blog2md/converter.py
    - 站点层：src/blog2md/*_url_to_md.py
    - 路由层：src/blog2md/site_router.py
@@ -123,7 +123,7 @@ python3 -m unittest -v tests.test_parse_html tests.test_cnblogs_url_to_md tests.
 要求：
 1) 新建 [site]_url_to_md.py，不改现有站点脚本核心逻辑。
 2) 复用 site_common.py（缓存、结果模型、输出路径）。
-3) 复用 reader_tools 中的 markdown/image/pathing/cache 能力，必要时做站点专用图片下载器。
+3) 复用 tools 中的 markdown/image/pathing/cache 能力，必要时做站点专用图片下载器。
 4) 在 site_router.py 注册域名分发。
 5) 增加 tests/test_[site]_url_to_md.py，并更新 tests/test_site_router.py。
 6) 跑全量测试并汇报。
@@ -134,7 +134,7 @@ python3 -m unittest -v tests.test_parse_html tests.test_cnblogs_url_to_md tests.
 ```text
 请在 blog2md 内调整缓存策略，但必须保持“域名隔离”。
 要求：
-1) 修改集中在 site_common.py 或 reader_tools/cache.py。
+1) 修改集中在 site_common.py 或 tools/cache.py。
 2) 兼容已存在 cache 目录结构，不破坏已有转换逻辑。
 3) 补充/更新相关测试断言。
 4) 跑全量测试并给出变更前后路径示例。
