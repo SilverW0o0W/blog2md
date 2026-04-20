@@ -5,126 +5,403 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>blog2md web</title>
   <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --primary: #2563eb;
+      --primary-soft: #dbeafe;
+      --success: #065f46;
+      --danger: #b91c1c;
+      --warning: #92400e;
+      --shadow: 0 12px 36px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f7fb;
-      color: #1f2937;
+      background: var(--bg);
+      color: var(--text);
     }
     .container {
-      max-width: 760px;
-      margin: 48px auto;
-      background: #ffffff;
-      border-radius: 12px;
+      max-width: 1280px;
+      margin: 32px auto 48px;
+      padding: 0 16px;
+    }
+    .hero,
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
       padding: 28px;
-      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+      margin-bottom: 20px;
     }
-    h1 {
-      margin: 0 0 12px;
-      font-size: 26px;
-    }
+    h1 { margin: 0 0 10px; font-size: 30px; }
+    h2 { margin: 0; font-size: 20px; }
     p {
-      margin: 0 0 18px;
+      margin: 0 0 14px;
       color: #4b5563;
-      line-height: 1.6;
+      line-height: 1.7;
     }
     label {
       display: block;
       margin-bottom: 8px;
       font-weight: 600;
     }
-    input[type="url"] {
+    input[type="url"],
+    textarea {
       width: 100%;
-      padding: 12px 14px;
       border: 1px solid #d1d5db;
-      border-radius: 8px;
+      border-radius: 10px;
+      padding: 12px 14px;
       font-size: 14px;
-      box-sizing: border-box;
+      font-family: inherit;
+      background: #fff;
+      color: var(--text);
     }
-    .actions {
-      margin-top: 14px;
+    textarea {
+      min-height: 360px;
+      resize: vertical;
+      line-height: 1.6;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .actions,
+    .panel-actions,
+    .sub-actions,
+    .tab-actions {
       display: flex;
-      gap: 12px;
+      flex-wrap: wrap;
+      gap: 10px;
       align-items: center;
     }
+    .actions { margin-top: 14px; }
     button {
       border: none;
-      background: #2563eb;
-      color: #fff;
-      border-radius: 8px;
+      border-radius: 10px;
       padding: 10px 16px;
       font-size: 14px;
       cursor: pointer;
+      background: var(--primary);
+      color: #fff;
+    }
+    button.secondary {
+      background: #111827;
+    }
+    button.ghost {
+      background: #eef2ff;
+      color: #3730a3;
+    }
+    button.light {
+      background: #f3f4f6;
+      color: #111827;
+    }
+    button.warn {
+      background: #f59e0b;
+      color: #111827;
     }
     button:disabled {
-      background: #93c5fd;
+      background: #bfdbfe;
+      color: #f8fafc;
       cursor: not-allowed;
     }
     .hint {
-      margin-top: 14px;
+      margin-top: 12px;
       font-size: 13px;
-      color: #6b7280;
+      color: var(--muted);
     }
-    .error {
+    .message {
       margin-top: 14px;
-      color: #b91c1c;
-      font-size: 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      display: none;
       white-space: pre-wrap;
-    }
-    .ok {
-      margin-top: 14px;
-      color: #065f46;
       font-size: 14px;
     }
+    .message.error {
+      display: none;
+      background: #fef2f2;
+      color: var(--danger);
+      border: 1px solid #fecaca;
+    }
+    .message.ok {
+      display: none;
+      background: #ecfdf5;
+      color: var(--success);
+      border: 1px solid #bbf7d0;
+    }
+    .meta {
+      display: none;
+      margin-bottom: 20px;
+      padding: 20px 22px;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px 16px;
+      margin-top: 14px;
+      font-size: 14px;
+    }
+    .meta-item {
+      padding: 10px 12px;
+      background: #f9fafb;
+      border-radius: 10px;
+      border: 1px solid #eef2f7;
+    }
+    .workspace {
+      display: none;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .panel {
+      padding: 18px;
+      min-width: 0;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+    .panel-subtitle {
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .option-row {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tab-actions {
+      margin-bottom: 12px;
+    }
+    .tab-btn.active {
+      background: #1d4ed8;
+      color: #fff;
+    }
+    .panel-view {
+      display: none;
+    }
+    .panel-view.active {
+      display: block;
+    }
+    .preview-box {
+      min-height: 360px;
+      max-height: 720px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      padding: 18px;
+      line-height: 1.75;
+    }
+    .preview-box h1,
+    .preview-box h2,
+    .preview-box h3,
+    .preview-box h4,
+    .preview-box h5,
+    .preview-box h6 {
+      margin-top: 1.2em;
+      margin-bottom: 0.6em;
+    }
+    .preview-box pre {
+      background: #111827;
+      color: #f8fafc;
+      padding: 12px;
+      overflow-x: auto;
+      border-radius: 10px;
+    }
+    .preview-box code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .preview-box img {
+      max-width: 100%;
+      border-radius: 8px;
+    }
+    .preview-empty {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .log-box,
+    .diff-box {
+      margin-top: 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 14px;
+      font-size: 13px;
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+    .log-box {
+      min-height: 120px;
+      max-height: 260px;
+      overflow: auto;
+    }
+    .diff-box {
+      min-height: 120px;
+      max-height: 260px;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    .diff-line {
+      display: block;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .diff-header { color: #93c5fd; }
+    .diff-hunk { color: #c4b5fd; }
+    .diff-add {
+      color: #bbf7d0;
+      background: rgba(34, 197, 94, 0.16);
+    }
+    .diff-remove {
+      color: #fecaca;
+      background: rgba(239, 68, 68, 0.16);
+    }
+    .diff-context { color: #e2e8f0; }
     .history {
-      margin-top: 28px;
-      border-top: 1px solid #e5e7eb;
-      padding-top: 18px;
+      padding: 20px 22px;
     }
     .history h2 {
-      margin: 0 0 12px;
-      font-size: 18px;
+      margin-bottom: 12px;
     }
     .history-list {
       margin: 0;
       padding-left: 18px;
       color: #374151;
       font-size: 14px;
-      line-height: 1.6;
+      line-height: 1.7;
     }
     .history-list li {
       margin-bottom: 8px;
       word-break: break-word;
     }
     .history-empty {
-      color: #6b7280;
+      color: var(--muted);
       font-size: 14px;
+    }
+    @media (max-width: 960px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
   <main class="container">
-    <h1>blog2md Web 转换器</h1>
-    <p>输入博客园或微信公众号文章链接，返回包含 Markdown 和图片资源的 ZIP 压缩包。</p>
+    <section class="hero">
+      <h1>blog2md Web 工作台</h1>
+      <p>先把博客链接转换成 Markdown，再在页面中预览、编辑，并使用大模型做流式格式优化。原稿和优化稿都支持源码/预览双视图。</p>
 
-    <form id="convert-form">
-      <label for="url-input">文章 URL</label>
-      <input
-        id="url-input"
-        type="url"
-        placeholder="https://www.cnblogs.com/... 或 https://mp.weixin.qq.com/s/..."
-        required
-      />
-      <div class="actions">
-        <button id="submit-btn" type="submit">转换并下载</button>
-        <span id="loading" style="display:none; color:#1d4ed8;">正在转换，请稍候...</span>
-      </div>
-      <div class="hint">支持域名：*.cnblogs.com、mp.weixin.qq.com</div>
-      <div id="error" class="error" style="display:none;"></div>
-      <div id="ok" class="ok" style="display:none;"></div>
-    </form>
+      <form id="convert-form">
+        <label for="url-input">文章 URL</label>
+        <input
+          id="url-input"
+          type="url"
+          placeholder="https://www.cnblogs.com/... 或 https://mp.weixin.qq.com/s/..."
+          required
+        />
+        <div class="actions">
+          <button id="preview-btn" type="button">获取 Markdown 与预览</button>
+          <button id="download-zip-btn" class="secondary" type="submit">转换并下载 ZIP</button>
+          <span id="loading" style="display:none; color:#1d4ed8;">处理中，请稍候...</span>
+        </div>
+        <div class="hint">建议交互：先点“获取 Markdown 与预览”，确认原稿无误后再点“开始 LLM 优化”。支持域名：*.cnblogs.com、mp.weixin.qq.com。</div>
+        <div id="error" class="message error"></div>
+        <div id="ok" class="message ok"></div>
+      </form>
+    </section>
 
-    <section class="history">
+    <section id="meta-card" class="card meta">
+      <h2>当前文章信息</h2>
+      <div id="meta-grid" class="meta-grid"></div>
+    </section>
+
+    <section id="workspace" class="workspace">
+      <article class="card panel">
+        <div class="panel-header">
+          <div>
+            <h2>原始 Markdown</h2>
+            <div class="panel-subtitle">这里展示 URL 转换后的原稿，你可以先校对，再决定是否交给 LLM 优化。</div>
+          </div>
+          <div class="panel-actions">
+            <button id="render-source-btn" class="ghost" type="button">刷新原稿预览</button>
+            <button id="download-source-md-btn" class="light" type="button">下载原稿 .md</button>
+          </div>
+        </div>
+
+        <div class="tab-actions">
+          <button id="source-editor-tab" class="tab-btn active light" type="button">源码</button>
+          <button id="source-preview-tab" class="tab-btn light" type="button">预览</button>
+        </div>
+
+        <div id="source-editor-view" class="panel-view active">
+          <label for="source-markdown" style="display:none;">原始 Markdown 编辑区</label>
+          <textarea id="source-markdown" placeholder="点击“获取 Markdown 与预览”后，这里会出现原始 Markdown。"></textarea>
+        </div>
+        <div id="source-preview-view" class="panel-view">
+          <div id="source-preview" class="preview-box"><div class="preview-empty">暂无预览内容</div></div>
+        </div>
+      </article>
+
+      <article class="card panel">
+        <div class="panel-header">
+          <div>
+            <h2>LLM 优化结果</h2>
+            <div class="panel-subtitle">默认以流式方式展示模型输出；结束后会回填受保护元素并给出最终 diff。</div>
+            <label class="option-row" for="optimize-add-toc">
+              <input id="optimize-add-toc" type="checkbox" />
+              将标题整理为目录并放到优化稿最前方
+            </label>
+          </div>
+          <div class="panel-actions">
+            <button id="optimize-btn" type="button">开始 LLM 优化</button>
+            <button id="stop-optimize-btn" class="warn" type="button" disabled>停止</button>
+            <button id="apply-optimized-btn" class="secondary" type="button">将优化稿应用为原稿</button>
+            <button id="render-optimized-btn" class="ghost" type="button">刷新优化稿预览</button>
+            <button id="download-optimized-md-btn" class="light" type="button">下载优化稿 .md</button>
+          </div>
+        </div>
+
+        <div class="tab-actions">
+          <button id="optimized-editor-tab" class="tab-btn active light" type="button">源码</button>
+          <button id="optimized-preview-tab" class="tab-btn light" type="button">预览</button>
+        </div>
+
+        <div id="optimized-editor-view" class="panel-view active">
+          <label for="optimized-markdown" style="display:none;">优化 Markdown 编辑区</label>
+          <textarea id="optimized-markdown" placeholder="开始优化后，流式输出会实时写入这里。"></textarea>
+        </div>
+        <div id="optimized-preview-view" class="panel-view">
+          <div id="optimized-preview" class="preview-box"><div class="preview-empty">暂无优化预览内容</div></div>
+        </div>
+
+        <div class="sub-actions" style="margin-top:14px;">
+          <strong>优化日志</strong>
+        </div>
+        <div id="optimize-log" class="log-box">尚未开始优化。</div>
+
+        <div class="sub-actions" style="margin-top:14px;">
+          <strong>优化 diff</strong>
+        </div>
+        <div id="diff-box" class="diff-box">暂无 diff</div>
+      </article>
+    </section>
+
+    <section class="card history">
       <h2>最近转换记录</h2>
       <div id="history-empty" class="history-empty" style="display:none;">暂无记录</div>
       <ol id="history-list" class="history-list"></ol>
@@ -133,12 +410,69 @@
 
   <script>
     const form = document.getElementById("convert-form");
-    const submitBtn = document.getElementById("submit-btn");
+    const previewBtn = document.getElementById("preview-btn");
+    const downloadZipBtn = document.getElementById("download-zip-btn");
     const loading = document.getElementById("loading");
     const errorBox = document.getElementById("error");
     const okBox = document.getElementById("ok");
     const historyList = document.getElementById("history-list");
     const historyEmpty = document.getElementById("history-empty");
+    const metaCard = document.getElementById("meta-card");
+    const metaGrid = document.getElementById("meta-grid");
+    const workspace = document.getElementById("workspace");
+    const sourceMarkdown = document.getElementById("source-markdown");
+    const optimizedMarkdown = document.getElementById("optimized-markdown");
+    const sourcePreview = document.getElementById("source-preview");
+    const optimizedPreview = document.getElementById("optimized-preview");
+    const renderSourceBtn = document.getElementById("render-source-btn");
+    const renderOptimizedBtn = document.getElementById("render-optimized-btn");
+    const optimizeBtn = document.getElementById("optimize-btn");
+    const stopOptimizeBtn = document.getElementById("stop-optimize-btn");
+    const applyOptimizedBtn = document.getElementById("apply-optimized-btn");
+    const optimizeAddTocCheckbox = document.getElementById("optimize-add-toc");
+    const downloadSourceMdBtn = document.getElementById("download-source-md-btn");
+    const downloadOptimizedMdBtn = document.getElementById("download-optimized-md-btn");
+    const optimizeLog = document.getElementById("optimize-log");
+    const diffBox = document.getElementById("diff-box");
+    const urlInput = document.getElementById("url-input");
+
+    const state = {
+      assetMap: {},
+      metadata: null,
+      optimizeController: null,
+      currentAttempt: 0,
+      currentOptimizedText: "",
+      optimizationStopped: false,
+    };
+
+    function setMessage(target, text) {
+      target.textContent = text || "";
+      target.style.display = text ? "block" : "none";
+    }
+
+    function clearMessages() {
+      setMessage(errorBox, "");
+      setMessage(okBox, "");
+    }
+
+    function setBusy(isBusy) {
+      previewBtn.disabled = isBusy;
+      downloadZipBtn.disabled = isBusy;
+      loading.style.display = isBusy ? "inline" : "none";
+    }
+
+    function setOptimizeBusy(isBusy) {
+      optimizeBtn.disabled = isBusy;
+      stopOptimizeBtn.disabled = !isBusy;
+      updateOptimizeActionState();
+    }
+
+    function updateOptimizeActionState() {
+      const hasOptimizedMarkdown = Boolean(optimizedMarkdown.value.trim());
+      renderOptimizedBtn.disabled = !hasOptimizedMarkdown;
+      downloadOptimizedMdBtn.disabled = !hasOptimizedMarkdown;
+      applyOptimizedBtn.disabled = !hasOptimizedMarkdown;
+    }
 
     function parseFilename(disposition) {
       if (!disposition) return "article.zip";
@@ -149,7 +483,7 @@
         } catch (_e) {}
       }
       const normalMatch = disposition.match(/filename="?([^";]+)"?/i);
-      return (normalMatch && normalMatch[1]) ? normalMatch[1] : "article.zip";
+      return normalMatch && normalMatch[1] ? normalMatch[1] : "article.zip";
     }
 
     function formatTime(text) {
@@ -189,21 +523,189 @@
       }
     }
 
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      errorBox.style.display = "none";
-      okBox.style.display = "none";
-
-      const url = document.getElementById("url-input").value.trim();
-      if (!url) {
-        errorBox.textContent = "请输入有效 URL";
-        errorBox.style.display = "block";
+    function renderMetadata(metadata) {
+      state.metadata = metadata || null;
+      metaGrid.innerHTML = "";
+      if (!metadata) {
+        metaCard.style.display = "none";
         return;
       }
 
-      submitBtn.disabled = true;
-      loading.style.display = "inline";
+      const items = [
+        ["标题", metadata.title || "-"],
+        ["站点", metadata.site_name || "-"],
+        ["作者", metadata.author || "-"],
+        ["发布时间", metadata.published_at || "-"],
+        ["更新时间", metadata.updated_at || "-"],
+        ["Markdown 文件", metadata.markdown_filename || "-"],
+        ["图片数量", String(metadata.image_count ?? "-")],
+        ["缓存来源", metadata.from_cache ? "是" : "否"],
+        ["ZIP 名称", metadata.zip_name || "-"],
+      ];
 
+      for (const [label, value] of items) {
+        const div = document.createElement("div");
+        div.className = "meta-item";
+        div.innerHTML = `<strong>${label}</strong><div style="margin-top:6px; word-break:break-word;">${value}</div>`;
+        metaGrid.appendChild(div);
+      }
+      metaCard.style.display = "block";
+    }
+
+    function setPanelView(prefix, view) {
+      const editorTab = document.getElementById(`${prefix}-editor-tab`);
+      const previewTab = document.getElementById(`${prefix}-preview-tab`);
+      const editorView = document.getElementById(`${prefix}-editor-view`);
+      const previewView = document.getElementById(`${prefix}-preview-view`);
+      const isEditor = view === "editor";
+
+      editorTab.classList.toggle("active", isEditor);
+      previewTab.classList.toggle("active", !isEditor);
+      editorView.classList.toggle("active", isEditor);
+      previewView.classList.toggle("active", !isEditor);
+    }
+
+    function appendLog(message) {
+      const current = optimizeLog.textContent.trim();
+      optimizeLog.textContent = current && current !== "尚未开始优化。"
+        ? `${current}\n${message}`
+        : message;
+      optimizeLog.scrollTop = optimizeLog.scrollHeight;
+    }
+
+    function resetOptimizeArea() {
+      optimizedMarkdown.value = "";
+      optimizedPreview.innerHTML = '<div class="preview-empty">暂无优化预览内容</div>';
+      optimizeLog.textContent = "尚未开始优化。";
+      diffBox.innerHTML = '<span class="diff-line diff-context">暂无 diff</span>';
+      state.currentAttempt = 0;
+      state.currentOptimizedText = "";
+      state.optimizationStopped = false;
+      updateOptimizeActionState();
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function renderDiff(diffText) {
+      if (!diffText || !diffText.trim()) {
+        diffBox.innerHTML = '<span class="diff-line diff-context">(no diff)</span>';
+        return;
+      }
+
+      const html = diffText.split("\n").map((line) => {
+        let className = "diff-context";
+        if (line.startsWith("+++") || line.startsWith("---")) {
+          className = "diff-header";
+        } else if (line.startsWith("@@")) {
+          className = "diff-hunk";
+        } else if (line.startsWith("+")) {
+          className = "diff-add";
+        } else if (line.startsWith("-")) {
+          className = "diff-remove";
+        }
+        return `<span class="diff-line ${className}">${escapeHtml(line)}</span>`;
+      }).join("");
+
+      diffBox.innerHTML = html;
+    }
+
+    async function renderMarkdown(markdown, target) {
+      const content = markdown.trim();
+      if (!content) {
+        target.innerHTML = '<div class="preview-empty">暂无预览内容</div>';
+        return;
+      }
+
+      const response = await fetch("/api/render-markdown", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markdown, asset_map: state.assetMap }),
+      });
+
+      if (!response.ok) {
+        let detail = `预览渲染失败（${response.status}）`;
+        try {
+          const data = await response.json();
+          detail = data.detail || detail;
+        } catch (_e) {}
+        throw new Error(detail);
+      }
+
+      const data = await response.json();
+      target.innerHTML = data.html || '<div class="preview-empty">暂无预览内容</div>';
+    }
+
+    function downloadTextFile(filename, content) {
+      const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    }
+
+    async function fetchPreview() {
+      clearMessages();
+      const url = urlInput.value.trim();
+      if (!url) {
+        setMessage(errorBox, "请输入有效 URL");
+        return;
+      }
+
+      setBusy(true);
+      optimizeBtn.disabled = true;
+      try {
+        const response = await fetch("/api/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+
+        if (!response.ok) {
+          let detail = `请求失败（${response.status}）`;
+          try {
+            const data = await response.json();
+            detail = data.detail || detail;
+          } catch (_e) {}
+          throw new Error(detail);
+        }
+
+        const data = await response.json();
+        state.assetMap = data.asset_map || {};
+        sourceMarkdown.value = data.markdown || "";
+        sourcePreview.innerHTML = data.preview_html || '<div class="preview-empty">暂无预览内容</div>';
+        renderMetadata(data.metadata || null);
+        workspace.style.display = "grid";
+        setPanelView("source", "editor");
+        setPanelView("optimized", "editor");
+        resetOptimizeArea();
+        optimizeBtn.disabled = !sourceMarkdown.value.trim();
+        setMessage(okBox, "已获取原始 Markdown。建议先切到“预览”确认结构，再开始 LLM 优化。");
+      } catch (error) {
+        setMessage(errorBox, String(error.message || error));
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function downloadZip() {
+      clearMessages();
+      const url = urlInput.value.trim();
+      if (!url) {
+        setMessage(errorBox, "请输入有效 URL");
+        return;
+      }
+
+      setBusy(true);
       try {
         const response = await fetch("/api/convert", {
           method: "POST",
@@ -223,7 +725,6 @@
         const blob = await response.blob();
         const disposition = response.headers.get("Content-Disposition");
         const filename = parseFilename(disposition);
-
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
         link.download = filename;
@@ -232,20 +733,234 @@
         link.remove();
         URL.revokeObjectURL(link.href);
 
-        okBox.textContent = `转换成功，已下载：${filename}`;
-        okBox.style.display = "block";
+        setMessage(okBox, `转换成功，已下载：${filename}`);
         await refreshHistory();
       } catch (error) {
-        errorBox.textContent = String(error.message || error);
-        errorBox.style.display = "block";
+        setMessage(errorBox, String(error.message || error));
       } finally {
-        submitBtn.disabled = false;
-        loading.style.display = "none";
+        setBusy(false);
+      }
+    }
+
+    async function optimizeMarkdownStream() {
+      clearMessages();
+      const markdown = sourceMarkdown.value.trim();
+      if (!markdown) {
+        setMessage(errorBox, "请先获取或填写原始 Markdown");
+        return;
+      }
+
+      if (state.optimizeController) {
+        state.optimizeController.abort();
+      }
+
+      resetOptimizeArea();
+      setOptimizeBusy(true);
+      state.optimizeController = new AbortController();
+
+      try {
+        const response = await fetch("/api/optimize/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            markdown: sourceMarkdown.value,
+            asset_map: state.assetMap,
+            add_toc: Boolean(optimizeAddTocCheckbox && optimizeAddTocCheckbox.checked),
+          }),
+          signal: state.optimizeController.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          let detail = `请求失败（${response.status}）`;
+          try {
+            const data = await response.json();
+            detail = data.detail || detail;
+          } catch (_e) {}
+          throw new Error(detail);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let newlineIndex = buffer.indexOf("\n");
+          while (newlineIndex >= 0) {
+            const line = buffer.slice(0, newlineIndex).trim();
+            buffer = buffer.slice(newlineIndex + 1);
+            if (line) {
+              const event = JSON.parse(line);
+              handleOptimizeEvent(event);
+            }
+            newlineIndex = buffer.indexOf("\n");
+          }
+        }
+
+        if (buffer.trim()) {
+          handleOptimizeEvent(JSON.parse(buffer.trim()));
+        }
+      } catch (error) {
+        if (error.name === "AbortError") {
+          state.optimizationStopped = true;
+          appendLog("已手动停止当前优化。你可以调整原稿后重新发起优化。");
+          if (optimizedMarkdown.value.trim()) {
+            setMessage(okBox, "已停止当前优化任务。当前已生成的部分结果会保留，可继续预览、下载，或应用回原稿。");
+          } else {
+            setMessage(okBox, "已停止当前优化任务。");
+          }
+        } else {
+          setMessage(errorBox, String(error.message || error));
+          appendLog(`优化失败：${String(error.message || error)}`);
+        }
+      } finally {
+        state.optimizeController = null;
+        setOptimizeBusy(false);
+      }
+    }
+
+    function handleOptimizeEvent(event) {
+      if (!event || !event.type) return;
+
+      if (event.type === "status") {
+        if (event.attempt_no && event.attempt_no !== state.currentAttempt && /开始/.test(event.message || "")) {
+          state.currentAttempt = event.attempt_no;
+          state.currentOptimizedText = "";
+          optimizedMarkdown.value = "";
+        }
+        appendLog(event.message || "状态更新");
+        return;
+      }
+
+      if (event.type === "warning") {
+        appendLog(event.message || "收到校验警告");
+        return;
+      }
+
+      if (event.type === "chunk") {
+        state.currentOptimizedText += event.text || "";
+        optimizedMarkdown.value = state.currentOptimizedText;
+        updateOptimizeActionState();
+        return;
+      }
+
+      if (event.type === "done") {
+        optimizedMarkdown.value = event.markdown || state.currentOptimizedText;
+        state.currentOptimizedText = optimizedMarkdown.value;
+        optimizedPreview.innerHTML = event.preview_html || '<div class="preview-empty">暂无优化预览内容</div>';
+        renderDiff(event.diff_text || "");
+        updateOptimizeActionState();
+        appendLog(`优化完成。最终使用第 ${event.attempt_no || 1} 次生成结果。`);
+        if (event.toc_applied) {
+          appendLog("已在优化稿顶部插入目录索引。")
+          setMessage(okBox, "LLM 优化完成，并已在优化稿顶部插入目录。你可以查看预览、diff 或下载结果。");
+        } else {
+          setMessage(okBox, "LLM 优化完成。你可以查看优化稿预览、diff，或者下载优化后的 Markdown。");
+        }
+        return;
+      }
+
+      if (event.type === "error") {
+        appendLog(event.detail || "优化失败");
+        setMessage(errorBox, event.detail || "优化失败");
+      }
+    }
+
+    previewBtn.addEventListener("click", fetchPreview);
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await downloadZip();
+    });
+
+    renderSourceBtn.addEventListener("click", async () => {
+      clearMessages();
+      try {
+        await renderMarkdown(sourceMarkdown.value, sourcePreview);
+        setPanelView("source", "preview");
+      } catch (error) {
+        setMessage(errorBox, String(error.message || error));
       }
     });
 
+    renderOptimizedBtn.addEventListener("click", async () => {
+      clearMessages();
+      try {
+        await renderMarkdown(optimizedMarkdown.value, optimizedPreview);
+        setPanelView("optimized", "preview");
+      } catch (error) {
+        setMessage(errorBox, String(error.message || error));
+      }
+    });
+
+    optimizeBtn.addEventListener("click", optimizeMarkdownStream);
+
+    stopOptimizeBtn.addEventListener("click", () => {
+      if (state.optimizeController) {
+        state.optimizeController.abort();
+      }
+    });
+
+    downloadSourceMdBtn.addEventListener("click", () => {
+      const fallback = "article.md";
+      const filename = (state.metadata && state.metadata.markdown_filename) || fallback;
+      downloadTextFile(filename, sourceMarkdown.value || "");
+    });
+
+    downloadOptimizedMdBtn.addEventListener("click", () => {
+      const baseName = (state.metadata && state.metadata.markdown_filename) || "article.md";
+      const filename = baseName.replace(/\.md$/i, "") + "_llm优化.md";
+      downloadTextFile(filename, optimizedMarkdown.value || "");
+    });
+
+    applyOptimizedBtn.addEventListener("click", async () => {
+      clearMessages();
+      const nextMarkdown = optimizedMarkdown.value.trim();
+      if (!nextMarkdown) {
+        setMessage(errorBox, "当前没有可应用的优化结果");
+        return;
+      }
+
+      sourceMarkdown.value = optimizedMarkdown.value;
+      try {
+        await renderMarkdown(sourceMarkdown.value, sourcePreview);
+        setPanelView("source", "editor");
+        optimizeBtn.disabled = false;
+        setMessage(okBox, state.optimizationStopped
+          ? "已将当前部分优化结果应用为新的原稿。你可以继续预览，或基于它重新发起优化。"
+          : "已将优化稿应用为新的原稿。你可以继续预览，或基于它再次优化。");
+      } catch (error) {
+        setMessage(errorBox, `应用优化稿成功，但刷新原稿预览失败：${String(error.message || error)}`);
+      }
+    });
+
+    document.getElementById("source-editor-tab").addEventListener("click", () => setPanelView("source", "editor"));
+    document.getElementById("source-preview-tab").addEventListener("click", async () => {
+      try {
+        await renderMarkdown(sourceMarkdown.value, sourcePreview);
+        setPanelView("source", "preview");
+      } catch (error) {
+        setMessage(errorBox, String(error.message || error));
+      }
+    });
+    document.getElementById("optimized-editor-tab").addEventListener("click", () => setPanelView("optimized", "editor"));
+    document.getElementById("optimized-preview-tab").addEventListener("click", async () => {
+      try {
+        await renderMarkdown(optimizedMarkdown.value, optimizedPreview);
+        setPanelView("optimized", "preview");
+      } catch (error) {
+        setMessage(errorBox, String(error.message || error));
+      }
+    });
+
+    updateOptimizeActionState();
+    optimizeBtn.disabled = true;
     refreshHistory();
   </script>
 </body>
 </html>
+
 

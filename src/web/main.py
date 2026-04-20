@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
+import mimetypes
 import re
 import tempfile
 from collections import deque
@@ -12,6 +14,8 @@ from typing import Any
 from urllib.parse import quote
 from zipfile import ZIP_DEFLATED, ZipFile
 
+import bleach
+import markdown as markdown_lib
 import requests
 from blog2md.cnblogs_url_to_md import CnblogsHtmlToMarkdownConverter
 from blog2md.site_common import UrlHtmlCacheLoader
@@ -21,6 +25,12 @@ from blog2md.wechat_url_to_md import WechatHtmlToMarkdownConverter
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
+from src.web.tools import (
+    MarkdownFormatterService,
+    build_formatter_config,
+    build_unified_diff_from_texts,
+)
+from src.web.tools.markdown_formatter import MarkdownFormatValidationError, format_validation_report
 
 
 app = FastAPI(title="blog2md web", version="0.1.0")
@@ -29,10 +39,62 @@ INDEX_HTML = BASE_DIR / "templates" / "index.html"
 MAX_HISTORY = 20
 RECENT_CONVERSIONS: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
 RECENT_CONVERSIONS_LOCK = Lock()
+MARKDOWN_IMAGE_TOKEN_RE = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<target>[^)]+)\)")
+HTML_MEDIA_SRC_RE = re.compile(
+    r'(<(?:img|video|audio|source)\b[^>]*?\bsrc=["\'])([^"\']+)(["\'])',
+    re.IGNORECASE,
+)
+PREVIEW_ALLOWED_TAGS = set(bleach.sanitizer.ALLOWED_TAGS).union(
+    {
+        "p",
+        "pre",
+        "code",
+        "blockquote",
+        "hr",
+        "br",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "img",
+        "table",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td",
+    }
+)
+PREVIEW_ALLOWED_ATTRIBUTES = {
+    "a": ["href", "title", "rel", "target"],
+    "img": ["src", "alt", "title"],
+    "code": ["class"],
+    "pre": ["class"],
+}
 
 
 class ConvertRequest(BaseModel):
     url: str
+
+
+class PreviewRequest(BaseModel):
+    url: str
+
+
+class RenderMarkdownRequest(BaseModel):
+    markdown: str
+    asset_map: dict[str, str] | None = None
+
+
+class OptimizeMarkdownRequest(BaseModel):
+    markdown: str
+    asset_map: dict[str, str] | None = None
+    model: str | None = None
+    base_url: str | None = None
+    max_retries: int | None = None
+    add_toc: bool = False
 
 
 def _sanitize_filename(name: str) -> str:
@@ -152,6 +214,151 @@ def _convert_without_metadata(*, url: str, output_markdown: Path, cache_dir: Pat
     }
 
 
+def _build_asset_map(markdown_path: Path, image_paths: list[Path]) -> dict[str, str]:
+    asset_map: dict[str, str] = {}
+    for image_path in image_paths:
+        if not image_path.exists():
+            continue
+
+        try:
+            key = image_path.relative_to(markdown_path.parent)
+        except ValueError:
+            key = Path(image_path.name)
+
+        mime_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
+        encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
+        asset_map[str(key).replace("\\", "/")] = f"data:{mime_type};base64,{encoded}"
+    return asset_map
+
+
+def _rewrite_markdown_assets(markdown_text: str, asset_map: dict[str, str] | None = None) -> str:
+    if not asset_map:
+        return markdown_text
+
+    def _replace_markdown_image(match: re.Match[str]) -> str:
+        target = match.group("target").strip()
+        replacement = asset_map.get(target)
+        if replacement is None:
+            return match.group(0)
+        return f"![{match.group('alt')}]({replacement})"
+
+    rewritten = MARKDOWN_IMAGE_TOKEN_RE.sub(_replace_markdown_image, markdown_text)
+
+    def _replace_html_media(match: re.Match[str]) -> str:
+        target = match.group(2).strip()
+        replacement = asset_map.get(target)
+        if replacement is None:
+            return match.group(0)
+        return f"{match.group(1)}{replacement}{match.group(3)}"
+
+    return HTML_MEDIA_SRC_RE.sub(_replace_html_media, rewritten)
+
+
+def _render_markdown_preview(markdown_text: str, asset_map: dict[str, str] | None = None) -> str:
+    rewritten = _rewrite_markdown_assets(markdown_text, asset_map)
+    rendered = markdown_lib.markdown(
+        rewritten,
+        extensions=["fenced_code", "tables", "sane_lists", "nl2br"],
+    )
+    return bleach.clean(
+        rendered,
+        tags=PREVIEW_ALLOWED_TAGS,
+        attributes=PREVIEW_ALLOWED_ATTRIBUTES,
+        protocols=["http", "https", "mailto", "data"],
+        strip=True,
+    )
+
+
+def _convert_with_fallback(*, url: str, output_markdown: Path, cache_dir: Path, timeout: int) -> dict[str, Any]:
+    metadata_error: str | None = None
+
+    markdown_path: Path
+    image_paths: list[Path]
+    cache_html_path: Path
+    from_cache: bool
+    site_name: str | None
+    title: str | None
+    meta_payload: dict[str, Any]
+
+    try:
+        result = convert_url_to_md(
+            url=url,
+            output=output_markdown,
+            cache_dir=cache_dir,
+            timeout=timeout,
+        )
+
+        markdown_path = result.markdown_path
+        image_paths = result.image_paths
+        cache_html_path = result.cache_html_path
+        from_cache = result.from_cache
+        site_name = result.metadata.site_name
+        title = result.metadata.title
+
+        zip_name = _resolve_zip_name(title=title, markdown_path=markdown_path)
+        try:
+            meta_payload = _build_meta_payload(result, source_url=url, zip_name=zip_name)
+        except Exception as exc:
+            metadata_error = str(exc)
+            meta_payload = _build_degraded_meta_payload(
+                source_url=url,
+                zip_name=zip_name,
+                markdown_path=markdown_path,
+                image_paths=image_paths,
+                cache_html_path=cache_html_path,
+                from_cache=from_cache,
+                site_name=site_name,
+                title=title,
+                metadata_error=metadata_error,
+            )
+    except ValueError as exc:
+        if not _is_metadata_error(exc):
+            raise
+
+        metadata_error = str(exc)
+        fallback = _convert_without_metadata(
+            url=url,
+            output_markdown=output_markdown,
+            cache_dir=cache_dir,
+            timeout=timeout,
+        )
+
+        markdown_path = fallback["markdown_path"]
+        image_paths = fallback["image_paths"]
+        cache_html_path = fallback["cache_html_path"]
+        from_cache = fallback["from_cache"]
+        site_name = fallback["site_name"]
+        title = fallback["title"]
+        zip_name = _resolve_zip_name(title=title, markdown_path=markdown_path)
+        meta_payload = _build_degraded_meta_payload(
+            source_url=url,
+            zip_name=zip_name,
+            markdown_path=markdown_path,
+            image_paths=image_paths,
+            cache_html_path=cache_html_path,
+            from_cache=from_cache,
+            site_name=site_name,
+            title=title,
+            metadata_error=metadata_error,
+        )
+
+    markdown_text = markdown_path.read_text(encoding="utf-8")
+    asset_map = _build_asset_map(markdown_path, image_paths)
+
+    return {
+        "markdown_path": markdown_path,
+        "markdown_text": markdown_text,
+        "image_paths": image_paths,
+        "cache_html_path": cache_html_path,
+        "from_cache": from_cache,
+        "site_name": site_name,
+        "title": title,
+        "zip_name": zip_name,
+        "metadata": meta_payload,
+        "asset_map": asset_map,
+    }
+
+
 def _record_history(item: dict[str, Any]) -> None:
     with RECENT_CONVERSIONS_LOCK:
         RECENT_CONVERSIONS.appendleft(item)
@@ -162,6 +369,78 @@ def _build_content_disposition(filename: str) -> str:
     fallback = _ascii_fallback_filename(filename)
     encoded = quote(filename, safe="")
     return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
+
+
+def _ndjson_line(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False) + "\n"
+
+
+def _extract_headings_for_toc(markdown_text: str) -> list[tuple[int, str]]:
+    headings: list[tuple[int, str]] = []
+    in_fence = False
+
+    for raw_line in markdown_text.splitlines():
+        line = raw_line.rstrip()
+        if re.match(r"^\s*```", line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+
+        match = re.match(r"^\s{0,3}(#{1,6})\s+(.+?)\s*$", line)
+        if not match:
+            continue
+
+        level = len(match.group(1))
+        if level > 4:
+            continue
+
+        title = re.sub(r"\s+#+\s*$", "", match.group(2)).strip()
+        if not title:
+            continue
+        headings.append((level, title))
+
+    if len(headings) >= 2 and headings[0][0] == 1:
+        return headings[1:]
+    return headings
+
+
+def _slugify_heading(text: str) -> str:
+    slug = text.strip().lower()
+    slug = re.sub(r"[`~!@#$%^&*()+=\[\]{}|\\:;\"'<>,.?/]+", "", slug)
+    slug = re.sub(r"\s+", "-", slug)
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    return slug or "section"
+
+
+def _build_toc_markdown(markdown_text: str) -> str | None:
+    headings = _extract_headings_for_toc(markdown_text)
+    if not headings:
+        return None
+
+    min_level = min(level for level, _ in headings)
+    slug_counts: dict[str, int] = {}
+    lines = ["## 目录"]
+
+    for level, title in headings:
+        base_slug = _slugify_heading(title)
+        count = slug_counts.get(base_slug, 0)
+        slug_counts[base_slug] = count + 1
+        slug = base_slug if count == 0 else f"{base_slug}-{count}"
+
+        indent = "  " * max(level - min_level, 0)
+        lines.append(f"{indent}- [{title}](#{slug})")
+
+    return "\n".join(lines)
+
+
+def _prepend_toc(markdown_text: str) -> tuple[str, bool]:
+    toc = _build_toc_markdown(markdown_text)
+    if not toc:
+        return markdown_text, False
+
+    content = markdown_text.lstrip("\n")
+    return f"{toc}\n\n{content}", True
 
 
 @app.get("/api/history")
@@ -178,6 +457,149 @@ def index() -> HTMLResponse:
     return HTMLResponse(INDEX_HTML.read_text(encoding="utf-8"))
 
 
+@app.post("/api/preview")
+def preview(payload: PreviewRequest) -> dict[str, Any]:
+    url = payload.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_markdown = tmp_path / "article.md"
+            artifacts = _convert_with_fallback(
+                url=url,
+                output_markdown=output_markdown,
+                cache_dir=Path("cache") / "html",
+                timeout=20,
+            )
+
+            return {
+                "url": url,
+                "markdown": artifacts["markdown_text"],
+                "asset_map": artifacts["asset_map"],
+                "preview_html": _render_markdown_preview(artifacts["markdown_text"], artifacts["asset_map"]),
+                "metadata": artifacts["metadata"],
+            }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch remote content: {exc}") from exc
+    except Exception as exc:  # pragma: no cover - generic fallback
+        raise HTTPException(status_code=500, detail=f"Unexpected preview error: {exc}") from exc
+
+
+@app.post("/api/render-markdown")
+def render_markdown(payload: RenderMarkdownRequest) -> dict[str, str]:
+    return {
+        "html": _render_markdown_preview(payload.markdown, payload.asset_map),
+    }
+
+
+@app.post("/api/optimize/stream")
+def optimize_markdown_stream(payload: OptimizeMarkdownRequest) -> StreamingResponse:
+    markdown = payload.markdown.strip()
+    if not markdown:
+        raise HTTPException(status_code=400, detail="Markdown is required")
+
+    config = build_formatter_config(
+        model_name=payload.model,
+        base_url=payload.base_url,
+        max_retries=payload.max_retries,
+    )
+
+    def _event_stream():
+        service = MarkdownFormatterService(config=config)
+
+        try:
+            yield _ndjson_line({"type": "status", "message": "开始调用大模型优化 Markdown。"})
+            for event in service.stream_format_markdown_content(markdown):
+                event_type = event["type"]
+                if event_type == "attempt_start":
+                    yield _ndjson_line(
+                        {
+                            "type": "status",
+                            "attempt_no": event["attempt_no"],
+                            "message": f"第{event['attempt_no']}次生成开始。",
+                        }
+                    )
+                    continue
+
+                if event_type == "chunk":
+                    yield _ndjson_line(
+                        {
+                            "type": "chunk",
+                            "attempt_no": event["attempt_no"],
+                            "text": event["text"],
+                        }
+                    )
+                    continue
+
+                if event_type == "restored":
+                    yield _ndjson_line(
+                        {
+                            "type": "status",
+                            "attempt_no": event["attempt_no"],
+                            "message": f"第{event['attempt_no']}次生成已自动回填受保护元素: {', '.join(event['categories'])}",
+                        }
+                    )
+                    continue
+
+                if event_type == "attempt_failed":
+                    yield _ndjson_line(
+                        {
+                            "type": "warning",
+                            "attempt_no": event["attempt_no"],
+                            "message": event["report"],
+                        }
+                    )
+                    continue
+
+                if event_type == "attempt_warning":
+                    yield _ndjson_line(
+                        {
+                            "type": "warning",
+                            "attempt_no": event["attempt_no"],
+                            "message": "\n".join(event.get("issues", [])) or "检测到非严重问题，已直接接受本次结果。",
+                        }
+                    )
+                    continue
+
+                if event_type == "complete":
+                    optimized_markdown = event["markdown"]
+                    toc_applied = False
+                    if payload.add_toc:
+                        optimized_markdown, toc_applied = _prepend_toc(optimized_markdown)
+
+                    yield _ndjson_line(
+                        {
+                            "type": "done",
+                            "attempt_no": event["attempt_no"],
+                            "markdown": optimized_markdown,
+                            "restored_categories": event.get("restored_categories", []),
+                            "toc_applied": toc_applied,
+                            "preview_html": _render_markdown_preview(optimized_markdown, payload.asset_map),
+                            "diff_text": build_unified_diff_from_texts(
+                                markdown,
+                                optimized_markdown,
+                                fromfile="before.md",
+                                tofile="after.md",
+                            ),
+                        }
+                    )
+                    return
+        except MarkdownFormatValidationError as exc:
+            yield _ndjson_line({"type": "error", "detail": format_validation_report(exc)})
+        except Exception as exc:  # pragma: no cover - network/model failure fallback
+            yield _ndjson_line({"type": "error", "detail": str(exc)})
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(_event_stream(), media_type="application/x-ndjson", headers=headers)
+
+
 @app.post("/api/convert")
 def convert(payload: ConvertRequest) -> StreamingResponse:
     url = payload.url.strip()
@@ -190,81 +612,15 @@ def convert(payload: ConvertRequest) -> StreamingResponse:
             output_markdown = tmp_path / "article.md"
             cache_dir = Path("cache") / "html"
             timeout = 20
+            artifacts = _convert_with_fallback(
+                url=url,
+                output_markdown=output_markdown,
+                cache_dir=cache_dir,
+                timeout=timeout,
+            )
 
-            metadata_error: str | None = None
-
-            markdown_path: Path
-            image_paths: list[Path]
-            cache_html_path: Path
-            from_cache: bool
-            site_name: str | None
-            title: str | None
-            meta_payload: dict[str, Any]
-
-            try:
-                result = convert_url_to_md(
-                    url=url,
-                    output=output_markdown,
-                    cache_dir=cache_dir,
-                    timeout=timeout,
-                )
-
-                markdown_path = result.markdown_path
-                image_paths = result.image_paths
-                cache_html_path = result.cache_html_path
-                from_cache = result.from_cache
-                site_name = result.metadata.site_name
-                title = result.metadata.title
-
-                zip_name = _resolve_zip_name(title=title, markdown_path=markdown_path)
-                try:
-                    meta_payload = _build_meta_payload(result, source_url=url, zip_name=zip_name)
-                except Exception as exc:
-                    metadata_error = str(exc)
-                    meta_payload = _build_degraded_meta_payload(
-                        source_url=url,
-                        zip_name=zip_name,
-                        markdown_path=markdown_path,
-                        image_paths=image_paths,
-                        cache_html_path=cache_html_path,
-                        from_cache=from_cache,
-                        site_name=site_name,
-                        title=title,
-                        metadata_error=metadata_error,
-                    )
-            except ValueError as exc:
-                if not _is_metadata_error(exc):
-                    raise
-
-                metadata_error = str(exc)
-                fallback = _convert_without_metadata(
-                    url=url,
-                    output_markdown=output_markdown,
-                    cache_dir=cache_dir,
-                    timeout=timeout,
-                )
-
-                markdown_path = fallback["markdown_path"]
-                image_paths = fallback["image_paths"]
-                cache_html_path = fallback["cache_html_path"]
-                from_cache = fallback["from_cache"]
-                site_name = fallback["site_name"]
-                title = fallback["title"]
-                zip_name = _resolve_zip_name(title=title, markdown_path=markdown_path)
-                meta_payload = _build_degraded_meta_payload(
-                    source_url=url,
-                    zip_name=zip_name,
-                    markdown_path=markdown_path,
-                    image_paths=image_paths,
-                    cache_html_path=cache_html_path,
-                    from_cache=from_cache,
-                    site_name=site_name,
-                    title=title,
-                    metadata_error=metadata_error,
-                )
-
-            zip_bytes = _build_zip_bytes(markdown_path, image_paths, meta_payload)
-            _record_history(meta_payload)
+            zip_bytes = _build_zip_bytes(artifacts["markdown_path"], artifacts["image_paths"], artifacts["metadata"])
+            _record_history(artifacts["metadata"])
     except ValueError as exc:
         # Unsupported domain or parse failures from blog2md.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -273,7 +629,7 @@ def convert(payload: ConvertRequest) -> StreamingResponse:
     except Exception as exc:  # pragma: no cover - generic fallback
         raise HTTPException(status_code=500, detail=f"Unexpected conversion error: {exc}") from exc
 
-    content_disposition = _build_content_disposition(zip_name)
+    content_disposition = _build_content_disposition(artifacts["zip_name"])
     headers = {"Content-Disposition": content_disposition}
     return StreamingResponse(BytesIO(zip_bytes), media_type="application/zip", headers=headers)
 

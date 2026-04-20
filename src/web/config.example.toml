@@ -1,0 +1,16 @@
+[llm]
+# LLM model name for markdown optimization.
+model_name = "qwen3.5-plus"
+
+# OpenAI-compatible endpoint.
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+# Set your key here for local usage. Do not commit real secrets.
+api_key = "your_dashscope_api_key"
+
+# Retry only for severe validation failures.
+max_retries = 1
+
+# Optional model flag forwarded via extra_body.
+enable_thinking = false
+

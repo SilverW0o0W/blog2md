@@ -103,6 +103,79 @@ k2.sql                                                     <span style="color: p
         self.assertEqual(title, "scp命令详解")
         self.assertTrue(markdown.startswith("# scp命令详解\n\n"))
 
+    def test_convert_without_h1_post_title_falls_back_to_document_title(self) -> None:
+        html = """
+        <html>
+          <head><title>容错标题 - 博客园</title></head>
+          <body>
+            <div class="post">
+              <div id="cnblogs_post_body"><p>body</p></div>
+            </div>
+          </body>
+        </html>
+        """
+        converter = CnblogsHtmlToMarkdownConverter()
+        title, markdown = converter.convert_html(html)
+
+        self.assertEqual(title, "容错标题")
+        self.assertTrue(markdown.startswith("# 容错标题\n\n"))
+
+    def test_extract_metadata_without_h1_post_title_uses_url_fallback(self) -> None:
+        html = """
+        <html><body>
+          <div class="post">
+            <div id="cnblogs_post_body"><p>body</p></div>
+          </div>
+        </body></html>
+        """
+        converter = CnblogsHtmlToMarkdownConverter()
+        meta = converter.extract_metadata(
+            html,
+            source_url="https://www.cnblogs.com/haibindev/p/19881562",
+        )
+
+        self.assertEqual(meta.title, "19881562")
+        self.assertEqual(meta.url, "https://www.cnblogs.com/haibindev/p/19881562")
+
+    def test_convert_without_h1_post_title_ignores_generic_site_title(self) -> None:
+        html = """
+        <html>
+          <head><title>博客园 - 开发者的网上家园</title></head>
+          <body>
+            <div class="post">
+              <div id="cnblogs_post_body"><p>body</p></div>
+            </div>
+          </body>
+        </html>
+        """
+        converter = CnblogsHtmlToMarkdownConverter()
+        title, markdown = converter.convert_html_with_assets(
+            html,
+            source_url="https://www.cnblogs.com/demo/p/useful-post",
+        )[:2]
+
+        self.assertEqual(title, "useful post")
+        self.assertTrue(markdown.startswith("# useful post\n\n"))
+
+    def test_convert_without_h1_post_title_falls_back_to_twitter_title(self) -> None:
+        html = """
+        <html>
+          <head>
+            <meta name="twitter:title" content="推特标题 - 博客园">
+          </head>
+          <body>
+            <div class="post">
+              <div id="cnblogs_post_body"><p>body</p></div>
+            </div>
+          </body>
+        </html>
+        """
+        converter = CnblogsHtmlToMarkdownConverter()
+        title, markdown = converter.convert_html(html)
+
+        self.assertEqual(title, "推特标题")
+        self.assertTrue(markdown.startswith("# 推特标题\n\n"))
+
     def test_convert_html_with_assets_downloads_images_and_rewrites_links(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

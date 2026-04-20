@@ -4,7 +4,7 @@
 
 特性：
 - 只处理 div.post 内的内容
-- 标题来自 h1.postTitle
+- 标题优先使用 h1.postTitle，缺失时自动兜底
 - 正文来自 div#cnblogs_post_body
 - 首次抓取后缓存 HTML，后续直接读取本地缓存
 - 复用通用 Markdown 渲染器
@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 from bs4 import BeautifulSoup, Tag
 
 from .tools.image import ImageDownloadTool
@@ -64,15 +65,11 @@ class CnblogsHtmlToMarkdownConverter:
         if not isinstance(post_root, Tag):
             raise ValueError("未找到 div.post，无法定位文章内容")
 
-        title_node = post_root.select_one("h1.postTitle")
-        if not isinstance(title_node, Tag):
-            raise ValueError("未找到 h1.postTitle，无法定位文章标题")
-
         body_node = post_root.select_one("div#cnblogs_post_body")
         if not isinstance(body_node, Tag):
             raise ValueError("未找到 div#cnblogs_post_body，无法定位文章正文")
 
-        title = self._extract_title(title_node)
+        title = self._resolve_title(soup=soup, post_root=post_root, source_url=source_url)
         self._normalize_code_blocks(body_node)
 
         image_files: list[Path] = []
@@ -95,11 +92,7 @@ class CnblogsHtmlToMarkdownConverter:
         if not isinstance(post_root, Tag):
             raise ValueError("未找到 div.post，无法提取元信息")
 
-        title_node = post_root.select_one("h1.postTitle")
-        if not isinstance(title_node, Tag):
-            raise ValueError("未找到 h1.postTitle，无法提取元信息")
-
-        title = self._extract_title(title_node)
+        title = self._resolve_title(soup=soup, post_root=post_root, source_url=source_url)
 
         post_desc = post_root.select_one("div.postDesc")
         author: str | None = None
@@ -133,11 +126,60 @@ class CnblogsHtmlToMarkdownConverter:
             site_name="cnblogs",
         )
 
+    def _resolve_title(self, *, soup: BeautifulSoup, post_root: Tag, source_url: str | None) -> str:
+        # 一级：经典结构 h1.postTitle。
+        title_node = post_root.select_one("h1.postTitle")
+        if isinstance(title_node, Tag):
+            title = self._extract_title(title_node)
+            if title:
+                return title
+
+        # 二级：post 根节点内常见候选。
+        for candidate in (
+            post_root.select_one("a#cb_post_title_url"),
+            post_root.select_one("div.postTitle a"),
+            post_root.select_one("h1"),
+            post_root.select_one("h2"),
+            post_root.select_one("h3"),
+        ):
+            if not isinstance(candidate, Tag):
+                continue
+            text = self._normalize_title_text(candidate.get_text(separator=" ", strip=True))
+            if self._is_usable_title(text):
+                return text
+
+        # 三级：文档级标题。
+        og_title = soup.select_one('meta[property="og:title"]')
+        if isinstance(og_title, Tag):
+            og_text = self._strip_cnblogs_suffix(
+                self._normalize_title_text((og_title.get("content") or "").strip())
+            )
+            if self._is_usable_title(og_text):
+                return og_text
+
+        twitter_title = soup.select_one('meta[name="twitter:title"]')
+        if isinstance(twitter_title, Tag):
+            twitter_text = self._strip_cnblogs_suffix(
+                self._normalize_title_text((twitter_title.get("content") or "").strip())
+            )
+            if self._is_usable_title(twitter_text):
+                return twitter_text
+
+        if soup.title:
+            title_text = self._strip_cnblogs_suffix(
+                self._normalize_title_text(soup.title.get_text(separator=" ", strip=True))
+            )
+            if self._is_usable_title(title_text):
+                return title_text
+
+        # 四级：URL 兜底，避免标题缺失导致整体失败。
+        return self._fallback_title_from_url(source_url)
+
     def _extract_title(self, title_node: Tag) -> str:
         # 优先使用 h1.postTitle > a#cb_post_title_url > span 的文本。
         span_node = title_node.select_one("a#cb_post_title_url span") or title_node.select_one("a span")
         if isinstance(span_node, Tag):
-            title = span_node.get_text(" ", strip=True)
+            title = span_node.get_text(separator=" ", strip=True)
             title = re.sub(r"\s+", " ", title)
             if title:
                 return title
@@ -145,7 +187,7 @@ class CnblogsHtmlToMarkdownConverter:
         # 回退：使用标题链接文本。
         anchor = title_node.select_one("a#cb_post_title_url") or title_node.find("a")
         if isinstance(anchor, Tag):
-            title = anchor.get_text(" ", strip=True)
+            title = anchor.get_text(separator=" ", strip=True)
             title = re.sub(r"\s+", " ", title)
             if title:
                 return title
@@ -156,9 +198,53 @@ class CnblogsHtmlToMarkdownConverter:
         for noisy in h1_clone.select("button,script,style"):
             noisy.decompose()
 
-        title = h1_clone.get_text(" ", strip=True)
-        title = re.sub(r"\s+", " ", title)
-        return title
+        title = h1_clone.get_text(separator=" ", strip=True)
+        return self._normalize_title_text(title)
+
+    def _normalize_title_text(self, text: str) -> str:
+        normalized = text.replace("\xa0", " ")
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return normalized.strip("-|_ ")
+
+    def _strip_cnblogs_suffix(self, text: str) -> str:
+        stripped = re.sub(r"\s*[-_|]\s*博客园(?:\s*[-|]\s*开发者的网上家园)?$", "", text).strip()
+        return stripped or text
+
+    def _is_usable_title(self, text: str) -> bool:
+        if not text:
+            return False
+
+        lowered = text.lower()
+        blacklist = {
+            "博客园",
+            "博客园 - 开发者的网上家园",
+            "开发者的网上家园",
+            "cnblogs",
+            "home",
+            "主页",
+            "首页",
+        }
+        if lowered in {item.lower() for item in blacklist}:
+            return False
+
+        if not re.search(r"[\u4e00-\u9fffA-Za-z0-9]", text):
+            return False
+
+        return True
+
+    def _fallback_title_from_url(self, source_url: str | None) -> str:
+        if source_url:
+            parsed = urlparse(source_url)
+            path_parts = [part for part in parsed.path.split("/") if part]
+            if path_parts:
+                last = unquote(path_parts[-1]).strip()
+                if last:
+                    if "." in last:
+                        last = last.rsplit(".", 1)[0]
+                    normalized = self._normalize_title_text(last.replace("-", " ").replace("_", " "))
+                    if normalized:
+                        return normalized
+        return "未命名文章"
 
     def _normalize_code_blocks(self, body_node: Tag) -> None:
         # 站点常见代码容器：内联样式中包含等宽字体；或 class 命中 code/cnblogs_code。
