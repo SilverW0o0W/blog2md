@@ -203,6 +203,38 @@ max_retries = 5
             self.assertEqual(config.base_url, "https://toml.example/v1")
             self.assertEqual(config.api_key, "toml-key")
 
+    def test_load_web_settings_from_toml_reads_web_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            config_path.write_text(
+                """
+[web.history]
+db_path = "cache/history.sqlite3"
+
+[web.cache]
+html_dir = "cache/html"
+retention_days = 30
+cleanup_interval_hours = 6
+""".strip(),
+                encoding="utf-8",
+            )
+
+            settings = formatter.load_web_settings_from_toml(config_path)
+
+            self.assertEqual(settings["history"]["db_path"], "cache/history.sqlite3")
+            self.assertEqual(settings["cache"]["retention_days"], 30)
+            self.assertEqual(settings["cache"]["cleanup_interval_hours"], 6)
+
+    def test_resolve_toml_config_path_does_not_use_environment_variable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            fake_env_config = Path(tmp_dir) / "env.toml"
+            fake_env_config.write_text("[llm]\nmodel_name='env'\n", encoding="utf-8")
+
+            with mock.patch.dict("os.environ", {"BLOG2MD_WEB_CONFIG": str(fake_env_config)}):
+                resolved = formatter.resolve_toml_config_path()
+
+            self.assertNotEqual(resolved, fake_env_config.resolve())
+
     def test_format_markdown_file_to_path_writes_optimized_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             source = Path(tmp_dir) / "article.md"

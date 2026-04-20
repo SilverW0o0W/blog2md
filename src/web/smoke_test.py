@@ -15,12 +15,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.web.main import RECENT_CONVERSIONS, RECENT_CONVERSIONS_LOCK, app
+from src.web.main import _clear_history_records_for_tests, app
 
 
 def run_smoke_test() -> None:
-    with RECENT_CONVERSIONS_LOCK:
-        RECENT_CONVERSIONS.clear()
+    _clear_history_records_for_tests()
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -70,8 +69,7 @@ def run_smoke_test() -> None:
         assert len(items) == 1
         assert items[0]["title"] == "测试标题"
 
-    with RECENT_CONVERSIONS_LOCK:
-        RECENT_CONVERSIONS.clear()
+    _clear_history_records_for_tests()
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)

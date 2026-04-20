@@ -61,9 +61,6 @@ RAW_URL_RE = re.compile(r"https?://[^\s<>)]+")
 FENCE_LINE_RE = re.compile(r"^\s*```.*$")
 CJK_TO_LATIN_SPACE_RE = re.compile(r"([\u4e00-\u9fff])\s+([A-Za-z0-9])")
 LATIN_TO_CJK_SPACE_RE = re.compile(r"([A-Za-z0-9])\s+([\u4e00-\u9fff])")
-CONFIG_PATH_ENV = "BLOG2MD_WEB_CONFIG"
-
-
 @dataclass(slots=True)
 class MarkdownFormatterConfig:
     model_name: str = DEFAULT_MODEL_NAME
@@ -82,28 +79,27 @@ def _load_toml_file(path: Path) -> dict[str, Any]:
 
 
 def _extract_llm_section(path: Path, data: dict[str, Any]) -> dict[str, Any]:
+    return _extract_named_section(path, data, "llm")
+
+
+def _extract_named_section(path: Path, data: dict[str, Any], section_name: str) -> dict[str, Any]:
     if path.name == "pyproject.toml":
         tool = data.get("tool")
         if isinstance(tool, dict):
             blog2md = tool.get("blog2md")
             if isinstance(blog2md, dict):
-                llm = blog2md.get("llm")
-                if isinstance(llm, dict):
-                    return llm
-    llm = data.get("llm")
-    if isinstance(llm, dict):
-        return llm
+                section = blog2md.get(section_name)
+                if isinstance(section, dict):
+                    return section
+    section = data.get(section_name)
+    if isinstance(section, dict):
+        return section
     return {}
 
 
 def resolve_toml_config_path(config_path: str | os.PathLike[str] | None = None) -> Path | None:
     if config_path:
         path = Path(config_path).expanduser().resolve()
-        return path if path.exists() else None
-
-    env_path = os.getenv(CONFIG_PATH_ENV)
-    if env_path:
-        path = Path(env_path).expanduser().resolve()
         return path if path.exists() else None
 
     web_config = Path(__file__).resolve().parents[1] / "config.toml"
@@ -128,6 +124,19 @@ def load_llm_settings_from_toml(config_path: str | os.PathLike[str] | None = Non
         return {}
 
     return _extract_llm_section(resolved, data)
+
+
+def load_web_settings_from_toml(config_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
+    resolved = resolve_toml_config_path(config_path)
+    if resolved is None:
+        return {}
+
+    try:
+        data = _load_toml_file(resolved)
+    except Exception:
+        return {}
+
+    return _extract_named_section(resolved, data, "web")
 
 
 def build_formatter_config(
@@ -415,10 +424,9 @@ class MarkdownFormatterService:
         from langchain_core.prompts import ChatPromptTemplate
         from langchain_openai import ChatOpenAI
 
-        api_key = self.config.api_key or os.getenv("DASHSCOPE_API_KEY")
         llm = ChatOpenAI(
             model=self.config.model_name,
-            api_key=cast(Any, api_key),
+            api_key=cast(Any, self.config.api_key),
             base_url=self.config.base_url,
             extra_body={"enable_thinking": self.config.enable_thinking},
         )

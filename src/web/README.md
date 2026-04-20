@@ -9,7 +9,8 @@
 - 再调用大模型对 Markdown 做流式格式优化
 - 在优化前后都查看 Markdown 渲染预览
 
-当前 UI 还提供最近转换记录面板（进程内内存，最多保留 20 条）。
+当前 UI 还提供最近转换记录面板（默认展示最新 20 条）。
+当前版本会把转换历史持久化到 SQLite，并定时清理 HTML 缓存文件。
 
 ## 目录
 
@@ -37,12 +38,30 @@ python3 -m pip install -r src/web/requirements.txt
 cp src/web/config.example.toml src/web/config.toml
 ```
 
-编辑 `src/web/config.toml`，填写 `llm.api_key` 等字段。
+编辑 `src/web/config.toml`，填写 `llm`、`web.history`、`web.cache` 等字段。
 
 启动：
 
 ```bash
 uvicorn src.web.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+`src/web/config.toml` 示例：
+
+```toml
+[llm]
+model_name = "qwen3.5-plus"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key = "your_dashscope_api_key"
+max_retries = 1
+
+[web.history]
+db_path = "cache/web_history.db"
+
+[web.cache]
+html_dir = "cache/html"
+retention_days = 90
+cleanup_interval_hours = 24
 ```
 
 
@@ -180,10 +199,13 @@ uvicorn src.web.main:app --reload --host 0.0.0.0 --port 8000
 - 当前仅支持 `*.cnblogs.com`、`mp.weixin.qq.com`
 - Web 程序仅在 `src/web` 内实现，`blog2md` 通过 `import blog2md` 当作第三方库调用
 - 最近记录是进程内数据，服务重启后会清空
+- 最近记录会写入 SQLite（默认 `cache/web_history.db`），服务重启后仍可查询
 - 元信息提取失败时会在 `meta.json` 中写入 `metadata_degraded=true` 和 `metadata_error`
 - 预览渲染会把本地图片资源内联成 data URI，避免浏览器访问不到临时文件
 - LLM 优化仍然遵守 `src/web/tools/markdown_formatter.py` 中的受保护元素与语义校验规则
 - 用户可把优化稿一键应用回左侧原稿，再基于最新结果继续优化
 - 用户手动停止流式优化后，已生成的部分结果不会丢失
-- LLM 配置优先级：请求参数（若提供） > `$BLOG2MD_WEB_CONFIG` 指向 TOML > `src/web/config.toml` > `pyproject.toml`（`[tool.blog2md.llm]`） > 环境变量 `DASHSCOPE_API_KEY`
+- 缓存清理任务会定时删除 `cache/html` 下超过保留天数的文件（默认 90 天）
+- LLM 配置优先级：请求参数（若提供） > `src/web/config.toml` > `pyproject.toml`（`[tool.blog2md.llm]`）
+- Web 服务配置优先级：`src/web/config.toml` > `pyproject.toml`（`[tool.blog2md.web]`）
 

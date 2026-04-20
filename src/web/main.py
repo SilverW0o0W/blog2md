@@ -4,7 +4,11 @@ import base64
 import json
 import mimetypes
 import re
+import sqlite3
 import tempfile
+import threading
+import time
+from contextlib import asynccontextmanager
 from collections import deque
 from datetime import datetime, timezone
 from io import BytesIO
@@ -29,17 +33,32 @@ from src.web.tools import (
     MarkdownFormatterService,
     build_formatter_config,
     build_unified_diff_from_texts,
+    load_web_settings_from_toml,
 )
 from src.web.tools.markdown_formatter import MarkdownFormatValidationError, format_validation_report
 
 
-app = FastAPI(title="blog2md web", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _init_history_db()
+    _cleanup_cache_files_once()
+    _start_cache_cleanup_worker()
+    try:
+        yield
+    finally:
+        _stop_cache_cleanup_worker()
+
+
+app = FastAPI(title="blog2md web", version="0.1.0", lifespan=lifespan)
 BASE_DIR = Path(__file__).resolve().parent
 INDEX_HTML = BASE_DIR / "templates" / "index.html"
 MAX_HISTORY = 20
 RECENT_CONVERSIONS: deque[dict[str, Any]] = deque(maxlen=MAX_HISTORY)
 RECENT_CONVERSIONS_LOCK = Lock()
-MARKDOWN_IMAGE_TOKEN_RE = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<target>[^)]+)\)")
+HISTORY_DB_LOCK = Lock()
+_CACHE_CLEANUP_STOP = threading.Event()
+_CACHE_CLEANUP_THREAD: threading.Thread | None = None
+MARKDOWN_IMAGE_TOKEN_RE = re.compile(r"!\[(?P<alt>[^]]*)\]\((?P<target>[^)]+)\)")
 HTML_MEDIA_SRC_RE = re.compile(
     r'(<(?:img|video|audio|source)\b[^>]*?\bsrc=["\'])([^"\']+)(["\'])',
     re.IGNORECASE,
@@ -73,6 +92,32 @@ PREVIEW_ALLOWED_ATTRIBUTES = {
     "code": ["class"],
     "pre": ["class"],
 }
+
+
+def _get_nested_dict(source: dict[str, Any], key: str) -> dict[str, Any]:
+    value = source.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _resolve_int_setting(value: Any, default: int, *, minimum: int = 1) -> int:
+    if isinstance(value, int):
+        return max(minimum, value)
+    return default
+
+
+def _resolve_path_setting(value: Any, default: str) -> Path:
+    if isinstance(value, str) and value.strip():
+        return Path(value).expanduser().resolve()
+    return Path(default).expanduser().resolve()
+
+
+WEB_SETTINGS = load_web_settings_from_toml()
+WEB_HISTORY_SETTINGS = _get_nested_dict(WEB_SETTINGS, "history")
+WEB_CACHE_SETTINGS = _get_nested_dict(WEB_SETTINGS, "cache")
+HISTORY_DB_PATH = _resolve_path_setting(WEB_HISTORY_SETTINGS.get("db_path"), "cache/web_history.db")
+CACHE_HTML_DIR = _resolve_path_setting(WEB_CACHE_SETTINGS.get("html_dir"), "cache/html")
+CACHE_RETENTION_DAYS = _resolve_int_setting(WEB_CACHE_SETTINGS.get("retention_days"), 90)
+CACHE_CLEANUP_INTERVAL_HOURS = _resolve_int_setting(WEB_CACHE_SETTINGS.get("cleanup_interval_hours"), 24)
 
 
 class ConvertRequest(BaseModel):
@@ -367,8 +412,106 @@ def _convert_with_fallback(*, url: str, output_markdown: Path, cache_dir: Path, 
 
 
 def _record_history(item: dict[str, Any]) -> None:
-    with RECENT_CONVERSIONS_LOCK:
-        RECENT_CONVERSIONS.appendleft(item)
+    _insert_history_record(item)
+
+
+def _init_history_db() -> None:
+    HISTORY_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(HISTORY_DB_PATH) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversion_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+
+
+def _insert_history_record(item: dict[str, Any]) -> None:
+    payload_text = json.dumps(item, ensure_ascii=False)
+    created_at = datetime.now(timezone.utc).isoformat()
+    with HISTORY_DB_LOCK:
+        with sqlite3.connect(HISTORY_DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO conversion_history (payload, created_at) VALUES (?, ?)",
+                (payload_text, created_at),
+            )
+            conn.commit()
+
+
+def _read_history_records(limit: int) -> list[dict[str, Any]]:
+    with HISTORY_DB_LOCK:
+        with sqlite3.connect(HISTORY_DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT payload FROM conversion_history ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            payload = json.loads(row[0])
+            if isinstance(payload, dict):
+                items.append(payload)
+        except Exception:
+            continue
+    return items
+
+
+def _clear_history_records_for_tests() -> None:
+    _init_history_db()
+    with HISTORY_DB_LOCK:
+        with sqlite3.connect(HISTORY_DB_PATH) as conn:
+            conn.execute("DELETE FROM conversion_history")
+            conn.commit()
+
+
+def _cleanup_cache_files_once() -> int:
+    if not CACHE_HTML_DIR.exists():
+        return 0
+
+    cutoff = time.time() - (CACHE_RETENTION_DAYS * 24 * 3600)
+    removed = 0
+    for path in CACHE_HTML_DIR.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink(missing_ok=True)
+                removed += 1
+        except FileNotFoundError:
+            continue
+    return removed
+
+
+def _cache_cleanup_worker() -> None:
+    interval_seconds = CACHE_CLEANUP_INTERVAL_HOURS * 3600
+    while not _CACHE_CLEANUP_STOP.wait(interval_seconds):
+        _cleanup_cache_files_once()
+
+
+def _start_cache_cleanup_worker() -> None:
+    global _CACHE_CLEANUP_THREAD
+    if _CACHE_CLEANUP_THREAD is not None and _CACHE_CLEANUP_THREAD.is_alive():
+        return
+
+    _CACHE_CLEANUP_STOP.clear()
+    _CACHE_CLEANUP_THREAD = threading.Thread(
+        target=_cache_cleanup_worker,
+        name="cache-cleanup-worker",
+        daemon=True,
+    )
+    _CACHE_CLEANUP_THREAD.start()
+
+
+def _stop_cache_cleanup_worker() -> None:
+    global _CACHE_CLEANUP_THREAD
+    _CACHE_CLEANUP_STOP.set()
+    if _CACHE_CLEANUP_THREAD is not None:
+        _CACHE_CLEANUP_THREAD.join(timeout=2)
+    _CACHE_CLEANUP_THREAD = None
 
 
 def _build_content_disposition(filename: str) -> str:
@@ -518,9 +661,9 @@ def _prepend_toc(markdown_text: str) -> tuple[str, bool]:
 
 @app.get("/api/history")
 def history(limit: int = Query(default=10, ge=1, le=MAX_HISTORY)) -> dict[str, list[dict[str, Any]]]:
-    with RECENT_CONVERSIONS_LOCK:
-        items = list(RECENT_CONVERSIONS)[:limit]
+    items = _read_history_records(limit)
     return {"items": items}
+
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -14,11 +14,12 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from src.web.main import app
+from src.web.main import _clear_history_records_for_tests, app
 
 
 class WebMainApiTests(unittest.TestCase):
     def setUp(self) -> None:
+        _clear_history_records_for_tests()
         self.client = TestClient(app)
 
     def test_index_contains_preview_and_apply_optimized_actions(self) -> None:

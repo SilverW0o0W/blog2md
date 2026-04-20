@@ -14,3 +14,17 @@ max_retries = 1
 # Optional model flag forwarded via extra_body.
 enable_thinking = false
 
+[web.history]
+# SQLite file used to persist conversion history.
+db_path = "cache/web_history.db"
+
+[web.cache]
+# HTML cache directory used by converters.
+html_dir = "cache/html"
+
+# Delete cached files older than this many days.
+retention_days = 90
+
+# Background cleanup interval in hours.
+cleanup_interval_hours = 24
+

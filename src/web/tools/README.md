@@ -65,7 +65,7 @@ cd /Users/silver/Documents/GitHub/blog2md
 python3 -m src.web.tools.markdown_formatter /absolute/path/to/blog.md --diff-output /absolute/path/to/blog_changes.diff
 ```
 
-### 依赖与环境变量
+### 依赖与配置
 
 先安装 Web 子项目依赖（包含 LangChain）：
 
@@ -77,9 +77,8 @@ python3 -m pip install -r src/web/requirements.txt
 配置文件默认读取顺序：
 
 1. `--config /path/to/config.toml`
-2. 环境变量 `$BLOG2MD_WEB_CONFIG` 指向的 TOML
-3. `src/web/config.toml`
-4. `pyproject.toml` 的 `[tool.blog2md.llm]`
+2. `src/web/config.toml`
+3. `pyproject.toml` 的 `[tool.blog2md.llm]`
 
 推荐先复制示例：
 
