@@ -98,12 +98,6 @@ api_key = "your_dashscope_api_key"
 max_retries = 1
 ```
 
-仍可用环境变量兜底：
-
-```bash
-export DASHSCOPE_API_KEY="your_api_key"
-```
-
 ### 说明
 
 - 模块会先让模型输出格式优化后的 Markdown。
