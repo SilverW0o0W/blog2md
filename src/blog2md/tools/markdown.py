@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 
-from bs4 import NavigableString, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 from ..constants import BLOCK_TAGS
 from .image import get_image_src
@@ -69,7 +69,14 @@ class MarkdownRenderTool:
             return f"{quoted}\n\n"
 
         if name == "pre":
-            code = node.get_text(separator="\n", strip=False).rstrip()
+            # Some rich editors keep code line breaks as <br> inside <pre><code>.
+            clone = BeautifulSoup(str(node), "html.parser")
+            for br in clone.find_all("br"):
+                br.replace_with("\n")
+
+            pre_node = clone.find("pre")
+            source_node = pre_node if isinstance(pre_node, Tag) else clone
+            code = source_node.get_text(separator="", strip=False).replace("\xa0", " ").rstrip()
             if not code:
                 return ""
             return f"```\n{code}\n```\n\n"

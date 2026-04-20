@@ -52,6 +52,7 @@ uvicorn src.web.main:app --reload --host 0.0.0.0 --port 8000
 - 包含转换后的 `.md`
 - 包含 markdown 里引用的本地图片文件
 - 包含 `meta.json`（来源 URL、标题、作者、站点、图片数量、缓存信息等）
+- `meta.json` 为 best-effort：元信息提取失败时会降级为可用的空字段，不影响 ZIP 下载
 
 ### `GET /api/history`
 
@@ -89,4 +90,5 @@ uvicorn src.web.main:app --reload --host 0.0.0.0 --port 8000
 - 当前仅支持 `*.cnblogs.com`、`mp.weixin.qq.com`
 - Web 程序仅在 `src/web` 内实现，`blog2md` 通过 `import blog2md` 当作第三方库调用
 - 最近记录是进程内数据，服务重启后会清空
+- 元信息提取失败时会在 `meta.json` 中写入 `metadata_degraded=true` 和 `metadata_error`
 

@@ -49,6 +49,29 @@ class CnblogsCustomConverterTests(unittest.TestCase):
         self.assertIn("print('hello')", markdown)
         self.assertIn("print('world')", markdown)
 
+    def test_convert_preserves_pre_lines_with_nested_span_nodes(self) -> None:
+        html = """
+        <div class="post">
+          <h1 class="postTitle">scp命令详解</h1>
+          <div id="cnblogs_post_body">
+            <div class="cnblogs_code">
+              <pre>[root@XX ~]# <span style="color: blue;">scp</span> -r root@<span style="color: purple;">43.224</span>.<span style="color: purple;">34.73</span>:/home/lk /<span style="color: black;">root
+root@</span><span style="color: purple;">43.224</span>.<span style="color: purple;">34.73</span><span style="color: maroon;">'</span><span style="color: maroon;">s password: </span>
+k2.sql                                                     <span style="color: purple;">100</span>%    <span style="color: purple;">0</span>     <span style="color: purple;">0</span>.0KB/s   <span style="color: purple;">00</span>:<span style="color: purple;">00</span>    
+[root@XX ~]# ls</pre>
+            </div>
+          </div>
+        </div>
+        """
+        converter = CnblogsHtmlToMarkdownConverter(download_images=False)
+        _, markdown = converter.convert_html(html)
+
+        self.assertIn("[root@XX ~]# scp -r root@43.224.34.73:/home/lk /root", markdown)
+        self.assertIn("root@43.224.34.73's password:", markdown)
+        self.assertIn("k2.sql                                                     100%    0     0.0KB/s   00:00", markdown)
+        self.assertIn("[root@XX ~]# ls", markdown)
+        self.assertNotIn("\nscp\n -r root@\n43.224\n.\n34.73", markdown)
+
     def test_title_extraction_ignores_button_text(self) -> None:
         html = """
         <div class="post">

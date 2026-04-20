@@ -70,6 +70,45 @@ def run_smoke_test() -> None:
         assert len(items) == 1
         assert items[0]["title"] == "测试标题"
 
+    with RECENT_CONVERSIONS_LOCK:
+        RECENT_CONVERSIONS.clear()
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        markdown_path = tmp_path / "article.md"
+        markdown_path.write_text("# Fallback title\n\nbody\n", encoding="utf-8")
+
+        fallback_result = {
+            "markdown_path": markdown_path,
+            "image_paths": [],
+            "cache_html_path": Path("cache/example_fallback.html"),
+            "from_cache": True,
+            "site_name": "wechat",
+            "title": "Fallback title",
+        }
+
+        client = TestClient(app)
+        with patch("main.convert_url_to_md", side_effect=ValueError("未找到元信息")):
+            with patch("main._convert_without_metadata", return_value=fallback_result):
+                response = client.post("/api/convert", json={"url": "https://mp.weixin.qq.com/s/demo"})
+
+        assert response.status_code == 200, response.text
+        with zipfile.ZipFile(io.BytesIO(response.content), "r") as zf:
+            names = set(zf.namelist())
+            assert "article.md" in names
+            assert "meta.json" in names
+            meta = json.loads(zf.read("meta.json").decode("utf-8"))
+            assert meta["title"] == "Fallback title"
+            assert meta["site_name"] == "wechat"
+            assert meta["metadata_degraded"] is True
+            assert meta["author"] is None
+
+        history_response = client.get("/api/history?limit=5")
+        assert history_response.status_code == 200
+        items = history_response.json()["items"]
+        assert len(items) == 1
+        assert items[0]["metadata_degraded"] is True
+
 
 if __name__ == "__main__":
     run_smoke_test()

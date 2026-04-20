@@ -13,7 +13,11 @@ from urllib.parse import quote
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import requests
+from blog2md.cnblogs_url_to_md import CnblogsHtmlToMarkdownConverter
+from blog2md.site_common import UrlHtmlCacheLoader
+from blog2md.site_router import select_site
 from blog2md import convert_url_to_md
+from blog2md.wechat_url_to_md import WechatHtmlToMarkdownConverter
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
@@ -76,6 +80,78 @@ def _build_meta_payload(result: Any, *, source_url: str, zip_name: str) -> dict[
     }
 
 
+def _build_degraded_meta_payload(
+    *,
+    source_url: str,
+    zip_name: str,
+    markdown_path: Path,
+    image_paths: list[Path],
+    cache_html_path: Path,
+    from_cache: bool,
+    site_name: str | None,
+    title: str | None,
+    metadata_error: str | None,
+) -> dict[str, Any]:
+    return {
+        "converted_at": datetime.now(timezone.utc).isoformat(),
+        "source_url": source_url,
+        "site_name": site_name,
+        "title": title,
+        "author": None,
+        "published_at": None,
+        "updated_at": None,
+        "cache_html_path": str(cache_html_path),
+        "from_cache": from_cache,
+        "markdown_filename": markdown_path.name,
+        "image_count": len(image_paths),
+        "zip_name": zip_name,
+        "metadata_degraded": True,
+        "metadata_error": metadata_error or "unknown metadata error",
+    }
+
+
+def _resolve_zip_name(*, title: str | None, markdown_path: Path) -> str:
+    base = _sanitize_filename(title or markdown_path.stem or "article")
+    return f"{base}.zip"
+
+
+def _is_metadata_error(exc: ValueError) -> bool:
+    message = str(exc)
+    lowered = message.lower()
+    return "元信息" in message or "metadata" in lowered
+
+
+def _convert_without_metadata(*, url: str, output_markdown: Path, cache_dir: Path, timeout: int) -> dict[str, Any]:
+    site = select_site(url)
+    loader = UrlHtmlCacheLoader(cache_dir=cache_dir, timeout=timeout)
+    html, cache_file, from_cache = loader.load(url)
+
+    if site == "cnblogs":
+        converter = CnblogsHtmlToMarkdownConverter(timeout=timeout)
+    elif site == "wechat":
+        converter = WechatHtmlToMarkdownConverter(timeout=timeout)
+    else:  # pragma: no cover - guarded by select_site
+        raise ValueError(f"未实现站点解析器: {site}")
+
+    title, markdown, image_files = converter.convert_html_with_assets(
+        html,
+        output_markdown=output_markdown,
+        source_url=url,
+    )
+
+    output_markdown.parent.mkdir(parents=True, exist_ok=True)
+    output_markdown.write_text(markdown, encoding="utf-8")
+
+    return {
+        "markdown_path": output_markdown,
+        "image_paths": image_files,
+        "cache_html_path": cache_file,
+        "from_cache": from_cache,
+        "site_name": site,
+        "title": title,
+    }
+
+
 def _record_history(item: dict[str, Any]) -> None:
     with RECENT_CONVERSIONS_LOCK:
         RECENT_CONVERSIONS.appendleft(item)
@@ -112,17 +188,82 @@ def convert(payload: ConvertRequest) -> StreamingResponse:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             output_markdown = tmp_path / "article.md"
+            cache_dir = Path("cache") / "html"
+            timeout = 20
 
-            result = convert_url_to_md(
-                url=url,
-                output=output_markdown,
-                cache_dir=Path("cache") / "html",
-                timeout=20,
-            )
+            metadata_error: str | None = None
 
-            zip_name = f"{_sanitize_filename(result.metadata.title)}.zip"
-            meta_payload = _build_meta_payload(result, source_url=url, zip_name=zip_name)
-            zip_bytes = _build_zip_bytes(result.markdown_path, result.image_paths, meta_payload)
+            markdown_path: Path
+            image_paths: list[Path]
+            cache_html_path: Path
+            from_cache: bool
+            site_name: str | None
+            title: str | None
+            meta_payload: dict[str, Any]
+
+            try:
+                result = convert_url_to_md(
+                    url=url,
+                    output=output_markdown,
+                    cache_dir=cache_dir,
+                    timeout=timeout,
+                )
+
+                markdown_path = result.markdown_path
+                image_paths = result.image_paths
+                cache_html_path = result.cache_html_path
+                from_cache = result.from_cache
+                site_name = result.metadata.site_name
+                title = result.metadata.title
+
+                zip_name = _resolve_zip_name(title=title, markdown_path=markdown_path)
+                try:
+                    meta_payload = _build_meta_payload(result, source_url=url, zip_name=zip_name)
+                except Exception as exc:
+                    metadata_error = str(exc)
+                    meta_payload = _build_degraded_meta_payload(
+                        source_url=url,
+                        zip_name=zip_name,
+                        markdown_path=markdown_path,
+                        image_paths=image_paths,
+                        cache_html_path=cache_html_path,
+                        from_cache=from_cache,
+                        site_name=site_name,
+                        title=title,
+                        metadata_error=metadata_error,
+                    )
+            except ValueError as exc:
+                if not _is_metadata_error(exc):
+                    raise
+
+                metadata_error = str(exc)
+                fallback = _convert_without_metadata(
+                    url=url,
+                    output_markdown=output_markdown,
+                    cache_dir=cache_dir,
+                    timeout=timeout,
+                )
+
+                markdown_path = fallback["markdown_path"]
+                image_paths = fallback["image_paths"]
+                cache_html_path = fallback["cache_html_path"]
+                from_cache = fallback["from_cache"]
+                site_name = fallback["site_name"]
+                title = fallback["title"]
+                zip_name = _resolve_zip_name(title=title, markdown_path=markdown_path)
+                meta_payload = _build_degraded_meta_payload(
+                    source_url=url,
+                    zip_name=zip_name,
+                    markdown_path=markdown_path,
+                    image_paths=image_paths,
+                    cache_html_path=cache_html_path,
+                    from_cache=from_cache,
+                    site_name=site_name,
+                    title=title,
+                    metadata_error=metadata_error,
+                )
+
+            zip_bytes = _build_zip_bytes(markdown_path, image_paths, meta_payload)
             _record_history(meta_payload)
     except ValueError as exc:
         # Unsupported domain or parse failures from blog2md.

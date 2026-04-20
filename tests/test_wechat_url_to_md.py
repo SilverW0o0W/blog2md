@@ -46,6 +46,30 @@ class WechatConverterTests(unittest.TestCase):
             self.assertTrue(image_files[0].exists())
             self.assertIn("![w](微信标题_images/image_001.png)", markdown)
 
+    def test_convert_preserves_pre_lines_with_span_highlight_and_br(self) -> None:
+        html = """
+        <div id="img-content" class="rich_media_wrp">
+          <h1 id="activity-name">微信标题</h1>
+          <div id="js_content">
+            <pre><code>
+              <span style="color:#5c6370;"># 1. first line</span><span><br/></span>
+              <span>query_vector = embedding_model.encode(user_query)</span><span><br/></span>
+              <span>top_k_chunks = vector_store.search(query_vector, k=5)</span><span><br/></span>
+              <span>answer = LLM.generate(prompt)</span>
+            </code></pre>
+          </div>
+        </div>
+        """
+        converter = WechatHtmlToMarkdownConverter(download_images=False)
+        _, markdown = converter.convert_html(html)
+
+        self.assertIn("```", markdown)
+        self.assertIn("# 1. first line", markdown)
+        self.assertIn("query_vector = embedding_model.encode(user_query)", markdown)
+        self.assertIn("top_k_chunks = vector_store.search(query_vector, k=5)", markdown)
+        self.assertIn("answer = LLM.generate(prompt)", markdown)
+        self.assertNotIn("first linequery_vector", markdown)
+
     def test_convert_wechat_url_returns_metadata(self) -> None:
         url = "https://mp.weixin.qq.com/s/Xs4UFMLs0VsaMrzk0iXoMw"
         html = """
