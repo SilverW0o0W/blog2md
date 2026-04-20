@@ -70,6 +70,61 @@ class WechatConverterTests(unittest.TestCase):
         self.assertIn("answer = LLM.generate(prompt)", markdown)
         self.assertNotIn("first linequery_vector", markdown)
 
+    def test_convert_renders_table_to_markdown_pipe_table(self) -> None:
+        html = """
+        <div id="img-content" class="rich_media_wrp">
+          <h1 id="activity-name">微信标题</h1>
+          <div id="js_content">
+            <p>这套「品牌洗白」系统的替换规则简直令人瞠目结舌：</p>
+            <table>
+              <tbody>
+                <tr>
+                  <td><section><span>原始内容</span></section></td>
+                  <td><section><span>替换为</span></section></td>
+                </tr>
+                <tr>
+                  <td><section><span>Claude Code</span></section></td>
+                  <td><section><span>Cursor Agent</span></section></td>
+                </tr>
+                <tr>
+                  <td><section><span>CLAUDE.md</span></section></td>
+                  <td><section><span>AGENTS.md</span></section></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        """
+        converter = WechatHtmlToMarkdownConverter(download_images=False)
+        _, markdown = converter.convert_html(html)
+
+        self.assertIn("这套「品牌洗白」系统的替换规则简直令人瞠目结舌：", markdown)
+        self.assertIn("| 原始内容 | 替换为 |", markdown)
+        self.assertIn("| --- | --- |", markdown)
+        self.assertIn("| Claude Code | Cursor Agent |", markdown)
+        self.assertIn("| CLAUDE.md | AGENTS.md |", markdown)
+
+    def test_convert_preserves_wechat_section_reference_lines(self) -> None:
+        html = """
+        <div id="img-content" class="rich_media_wrp">
+          <h1 id="activity-name">微信标题</h1>
+          <div id="js_content">
+            <section><span><span leaf="">参考资料：</span><span leaf=""><br/></span></span></section>
+            <section><span><span leaf="">https://x.com/a</span></span></section>
+            <section><span><span leaf="">https://x.com/b</span></span></section>
+            <section><span><span leaf="">https://x.com/c</span></span></section>
+          </div>
+        </div>
+        """
+        converter = WechatHtmlToMarkdownConverter(download_images=False)
+        _, markdown = converter.convert_html(html)
+
+        self.assertIn("参考资料：", markdown)
+        self.assertIn("https://x.com/a", markdown)
+        self.assertIn("https://x.com/b", markdown)
+        self.assertIn("https://x.com/c", markdown)
+        self.assertIn("https://x.com/a\n\nhttps://x.com/b", markdown)
+
     def test_convert_wechat_url_returns_metadata(self) -> None:
         url = "https://mp.weixin.qq.com/s/Xs4UFMLs0VsaMrzk0iXoMw"
         html = """
@@ -165,5 +220,4 @@ class WechatImageDownloaderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

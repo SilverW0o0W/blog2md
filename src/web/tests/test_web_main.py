@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -76,6 +78,37 @@ class WebMainApiTests(unittest.TestCase):
         self.assertIn("<h1>Title</h1>", html)
         self.assertIn("data:image/png;base64,ZmFrZQ==", html)
         self.assertNotIn("<script>", html)
+
+    def test_export_markdown_zip_packages_markdown_and_assets(self) -> None:
+        response = self.client.post(
+            "/api/export-markdown-zip",
+            json={
+                "markdown": "# Title\n\n![img](article_images/image_001.png)",
+                "asset_map": {"article_images/image_001.png": "data:image/png;base64,ZmFrZQ=="},
+                "markdown_filename": "article.md",
+                "title": "示例标题",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.headers.get("content-type", "").startswith("application/zip"))
+        with zipfile.ZipFile(io.BytesIO(response.content), "r") as zf:
+            names = set(zf.namelist())
+            self.assertIn("article.md", names)
+            self.assertIn("article_images/image_001.png", names)
+            self.assertIn("meta.json", names)
+            exported_markdown = zf.read("article.md").decode("utf-8")
+            self.assertIn("![img](article_images/image_001.png)", exported_markdown)
+
+    def test_export_markdown_zip_requires_markdown(self) -> None:
+        response = self.client.post(
+            "/api/export-markdown-zip",
+            json={
+                "markdown": "   ",
+                "asset_map": {},
+            },
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_optimize_stream_returns_chunk_and_done_events(self) -> None:
         stream_events = [

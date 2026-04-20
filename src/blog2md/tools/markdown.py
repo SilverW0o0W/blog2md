@@ -47,6 +47,10 @@ class MarkdownRenderTool:
             text = self._render_inline(node).strip()
             return f"{text}\n\n" if text else ""
 
+        if name == "section":
+            text = self._render_inline(node).strip()
+            return f"{text}\n\n" if text else ""
+
         if name == "div":
             block_children = [c for c in node.children if isinstance(c, Tag) and c.name in BLOCK_TAGS]
             if block_children:
@@ -87,6 +91,9 @@ class MarkdownRenderTool:
         if name == "img":
             return f"{self._render_image(node)}\n\n"
 
+        if name == "table":
+            return self._render_table(node)
+
         if name in BLOCK_TAGS:
             return "".join(
                 self._render_block(child, level=level)
@@ -95,6 +102,45 @@ class MarkdownRenderTool:
             )
 
         return self._render_inline(node)
+
+    def _render_table(self, node: Tag) -> str:
+        rows: list[list[str]] = []
+
+        for tr in node.find_all("tr"):
+            if tr.find_parent("table") is not node:
+                continue
+
+            cells = [cell for cell in tr.find_all(["th", "td"], recursive=False) if isinstance(cell, Tag)]
+            if not cells:
+                continue
+
+            row: list[str] = []
+            for cell in cells:
+                raw = self._render_inline(cell)
+                normalized = normalize_text(raw.replace("\n", " "))
+                row.append(self._escape_table_cell(normalized or " "))
+            rows.append(row)
+
+        if not rows:
+            return ""
+
+        col_count = max(len(row) for row in rows)
+        normalized_rows = [row + [" "] * (col_count - len(row)) for row in rows]
+
+        header = normalized_rows[0]
+        separator = ["---"] * col_count
+        lines = [self._to_markdown_table_row(header), self._to_markdown_table_row(separator)]
+
+        for row in normalized_rows[1:]:
+            lines.append(self._to_markdown_table_row(row))
+
+        return "\n".join(lines) + "\n\n"
+
+    def _to_markdown_table_row(self, row: list[str]) -> str:
+        return "| " + " | ".join(row) + " |"
+
+    def _escape_table_cell(self, text: str) -> str:
+        return text.replace("|", "\\|")
 
     def _render_list(self, node: Tag, *, level: int, ordered: bool) -> str:
         lines: list[str] = []
@@ -191,4 +237,3 @@ def normalize_text(text: str) -> str:
     cleaned = text.replace("\xa0", " ")
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip()
-

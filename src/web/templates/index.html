@@ -339,7 +339,7 @@
           </div>
           <div class="panel-actions">
             <button id="render-source-btn" class="ghost" type="button">刷新原稿预览</button>
-            <button id="download-source-md-btn" class="light" type="button">下载原稿 .md</button>
+            <button id="download-source-md-btn" class="light" type="button">下载原稿 ZIP</button>
           </div>
         </div>
 
@@ -372,7 +372,7 @@
             <button id="stop-optimize-btn" class="warn" type="button" disabled>停止</button>
             <button id="apply-optimized-btn" class="secondary" type="button">将优化稿应用为原稿</button>
             <button id="render-optimized-btn" class="ghost" type="button">刷新优化稿预览</button>
-            <button id="download-optimized-md-btn" class="light" type="button">下载优化稿 .md</button>
+            <button id="download-optimized-md-btn" class="light" type="button">下载优化稿 ZIP</button>
           </div>
         </div>
 
@@ -642,8 +642,30 @@
       target.innerHTML = data.html || '<div class="preview-empty">暂无预览内容</div>';
     }
 
-    function downloadTextFile(filename, content) {
-      const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    async function downloadMarkdownZip(markdown, markdownFilename, title) {
+      const response = await fetch("/api/export-markdown-zip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          markdown,
+          asset_map: state.assetMap,
+          markdown_filename: markdownFilename,
+          title,
+        }),
+      });
+
+      if (!response.ok) {
+        let detail = `请求失败（${response.status}）`;
+        try {
+          const data = await response.json();
+          detail = data.detail || detail;
+        } catch (_e) {}
+        throw new Error(detail);
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition");
+      const filename = parseFilename(disposition);
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
       link.download = filename;
@@ -651,6 +673,8 @@
       link.click();
       link.remove();
       URL.revokeObjectURL(link.href);
+
+      return filename;
     }
 
     async function fetchPreview() {
@@ -907,13 +931,17 @@
     downloadSourceMdBtn.addEventListener("click", () => {
       const fallback = "article.md";
       const filename = (state.metadata && state.metadata.markdown_filename) || fallback;
-      downloadTextFile(filename, sourceMarkdown.value || "");
+      downloadMarkdownZip(sourceMarkdown.value || "", filename, state.metadata && state.metadata.title)
+        .then((zipName) => setMessage(okBox, `已下载原稿 ZIP：${zipName}`))
+        .catch((error) => setMessage(errorBox, String(error.message || error)));
     });
 
     downloadOptimizedMdBtn.addEventListener("click", () => {
       const baseName = (state.metadata && state.metadata.markdown_filename) || "article.md";
       const filename = baseName.replace(/\.md$/i, "") + "_llm优化.md";
-      downloadTextFile(filename, optimizedMarkdown.value || "");
+      downloadMarkdownZip(optimizedMarkdown.value || "", filename, state.metadata && state.metadata.title)
+        .then((zipName) => setMessage(okBox, `已下载优化稿 ZIP：${zipName}`))
+        .catch((error) => setMessage(errorBox, String(error.message || error)));
     });
 
     applyOptimizedBtn.addEventListener("click", async () => {

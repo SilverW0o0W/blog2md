@@ -97,6 +97,13 @@ class OptimizeMarkdownRequest(BaseModel):
     add_toc: bool = False
 
 
+class ExportMarkdownZipRequest(BaseModel):
+    markdown: str
+    asset_map: dict[str, str] | None = None
+    markdown_filename: str | None = None
+    title: str | None = None
+
+
 def _sanitize_filename(name: str) -> str:
     safe = re.sub(r"[^\w\-.]+", "_", name.strip(), flags=re.UNICODE)
     return safe.strip("._") or "article"
@@ -375,6 +382,72 @@ def _ndjson_line(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False) + "\n"
 
 
+def _normalize_markdown_filename(name: str | None) -> str:
+    candidate = (name or "article.md").strip()
+    if not candidate:
+        candidate = "article.md"
+    safe = _sanitize_filename(Path(candidate).name)
+    if not safe.lower().endswith(".md"):
+        safe = f"{safe}.md"
+    return safe
+
+
+def _safe_zip_asset_path(path_text: str) -> str:
+    normalized = str(path_text).replace("\\", "/").strip().lstrip("/")
+    parts = [part for part in normalized.split("/") if part and part not in {".", ".."}]
+    if not parts:
+        return "assets/file.bin"
+    return "/".join(parts)
+
+
+def _decode_data_uri(uri: str) -> bytes | None:
+    if not uri.startswith("data:"):
+        return None
+    marker = ";base64,"
+    if marker not in uri:
+        return None
+    payload = uri.split(marker, 1)[1]
+    try:
+        return base64.b64decode(payload)
+    except Exception:
+        return None
+
+
+def _build_markdown_zip_bytes(
+    *,
+    markdown_text: str,
+    markdown_filename: str,
+    asset_map: dict[str, str] | None,
+    title: str | None,
+) -> tuple[bytes, dict[str, Any], str]:
+    image_count = 0
+    zip_name = _resolve_zip_name(title=title, markdown_path=Path(markdown_filename))
+    buf = BytesIO()
+
+    with ZipFile(buf, "w", compression=ZIP_DEFLATED) as zf:
+        zf.writestr(markdown_filename, markdown_text)
+
+        if asset_map:
+            for rel_path, data_uri in asset_map.items():
+                content = _decode_data_uri(data_uri)
+                if content is None:
+                    continue
+                zf.writestr(_safe_zip_asset_path(rel_path), content)
+                image_count += 1
+
+        meta = {
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "markdown_filename": markdown_filename,
+            "image_count": image_count,
+            "zip_name": zip_name,
+            "title": title,
+        }
+        zf.writestr("meta.json", json.dumps(meta, ensure_ascii=False, indent=2))
+
+    buf.seek(0)
+    return buf.read(), meta, zip_name
+
+
 def _extract_headings_for_toc(markdown_text: str) -> list[tuple[int, str]]:
     headings: list[tuple[int, str]] = []
     in_fence = False
@@ -494,6 +567,24 @@ def render_markdown(payload: RenderMarkdownRequest) -> dict[str, str]:
     return {
         "html": _render_markdown_preview(payload.markdown, payload.asset_map),
     }
+
+
+@app.post("/api/export-markdown-zip")
+def export_markdown_zip(payload: ExportMarkdownZipRequest) -> StreamingResponse:
+    markdown_text = payload.markdown.strip()
+    if not markdown_text:
+        raise HTTPException(status_code=400, detail="Markdown is required")
+
+    markdown_filename = _normalize_markdown_filename(payload.markdown_filename)
+    zip_bytes, _, zip_name = _build_markdown_zip_bytes(
+        markdown_text=payload.markdown,
+        markdown_filename=markdown_filename,
+        asset_map=payload.asset_map,
+        title=payload.title,
+    )
+
+    headers = {"Content-Disposition": _build_content_disposition(zip_name)}
+    return StreamingResponse(BytesIO(zip_bytes), media_type="application/zip", headers=headers)
 
 
 @app.post("/api/optimize/stream")
